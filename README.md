@@ -1,49 +1,49 @@
 # RC Simulation Description
 
-Paquete de descripcion para un auto RC sencillo en ROS 2 con Gazebo (gz). Instrucciones pensadas para WSL2 en Windows con Ubuntu 24.04 (Noble) y ROS Jazzy.
+Description package for a simple RC car in ROS 2 with Gazebo (gz). Instructions are tailored for WSL2 on Windows with Ubuntu 24.04 (Noble) and ROS Jazzy.
 
-## Estructura del paquete
-- `urdf/`: modelo `rc_car.urdf.xacro` con llantas delanteras direccionables.
-- `launch/`: `spawn_rc_car.launch.py` levanta Gazebo (gz) y spawnea el robot.
-- `worlds/`: `basic_track.world` con pista rectangular y marcador de flecha (planos y luz locales, sin dependencias de model://).
-- `config/rviz/`: configuracion rapida para RViz (opcional).
-- `meshes/`: lugar para mallas personalizadas si se necesitan.
+## Package layout
+- `urdf/`: `rc_car.urdf.xacro` with steerable front wheels.
+- `launch/`: `spawn_rc_car.launch.py` starts Gazebo (gz) and spawns the robot.
+- `worlds/`: `basic_track.world` with a rectangular track and arrow marker (local ground and light, no `model://`).
+- `config/rviz/`: quick RViz config (optional).
+- `meshes/`: placeholder for custom meshes.
 
-## Instalacion paso a paso (WSL2, Ubuntu 24.04, ROS Jazzy)
-1) Preparar sistema y herramientas base:
+## Installation (WSL2, Ubuntu 24.04, ROS Jazzy)
+1) Base tools:
 ```
 sudo apt update
 sudo apt install -y curl gnupg2 lsb-release software-properties-common \
   build-essential git python3-colcon-common-extensions python3-vcstool
 ```
 
-2) Agregar repositorio de ROS 2 Jazzy:
+2) Add ROS 2 Jazzy apt repo:
 ```
 sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/ros2.list
 sudo apt update
 ```
 
-3) Instalar ROS 2 desktop y deps que usamos:
+3) Install ROS desktop and runtime deps:
 ```
 sudo apt install -y ros-jazzy-desktop \
   ros-jazzy-ros-gz-sim \
   ros-jazzy-joint-state-publisher ros-jazzy-robot-state-publisher ros-jazzy-xacro
 ```
 
-4) Instalar rosdep (en Noble el paquete es `python3-rosdep`), inicializar y actualizar:
+4) Install rosdep (on Noble use `python3-rosdep`), init and update:
 ```
 sudo apt install -y python3-rosdep
-sudo rosdep init        # solo la primera vez
+sudo rosdep init        # first time only
 rosdep update
 ```
 
-5) (Opcional) Verificar que `gz` esta en el PATH:
+5) (Optional) Confirm `gz` is on PATH:
 ```
 gz --help
 ```
 
-6) Clonar o colocar este workspace y compilar:
+6) Build the workspace:
 ```
 cd ~/AiAtonomousRc
 source /opt/ros/jazzy/setup.bash
@@ -51,17 +51,17 @@ colcon build
 source install/setup.bash
 ```
 
-## Ejecucion
-Lanza Gazebo y spawnea el auto:
+## Run
+Launch Gazebo and spawn the car:
 ```
 ros2 launch rc_sim_description spawn_rc_car.launch.py z:=0.15
 ```
 
-Argumentos utiles:
-- `x`, `y`, `z`: posicion inicial del auto (z > 0 evita colisiones al spawnear).
-- `world`: ruta al mundo SDF (por defecto `worlds/basic_track.world`).
-- `rviz:=true` para abrir RViz con el modelo (por defecto `false`, solo Gazebo).
+Useful arguments:
+- `x`, `y`, `z`: initial pose (keep `z` > 0 to avoid spawn collision).
+- `world`: SDF world path (defaults to `worlds/basic_track.world`).
+- `rviz:=true` to open RViz (default `false`, Gazebo only).
 
-## Notas para WSL
-- Usa WSLg o un servidor X/Wayland para ver la GUI de Gazebo. En Windows 11 con WSLg suele funcionar sin configuracion extra.
-- Si cambias a otra distro ROS o Gazebo, ajusta los nombres de paquete en la seccion de instalacion.
+## WSL notes
+- Use WSLg or an X/Wayland server to view the Gazebo GUI; on Windows 11 with WSLg it usually works out of the box.
+- If you switch ROS or Gazebo distros, adjust package names accordingly.

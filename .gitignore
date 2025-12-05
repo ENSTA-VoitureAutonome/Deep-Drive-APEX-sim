@@ -1,0 +1,23 @@
+# ROS 2 / colcon
+build/
+install/
+log/
+*.log
+
+# ROS / Gazebo runtime
+.ros/
+.gazebo/
+
+# Python
+__pycache__/
+*.pyc
+
+# VS Code / IDE
+.vscode/
+.idea/
+
+# Misc
+*.swp
+*.swo
+*~
+.DS_Store

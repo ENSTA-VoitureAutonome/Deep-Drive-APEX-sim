@@ -73,7 +73,7 @@ def generate_launch_description():
         output="screen",
     )
 
-    # espera pequeña para que gz sim arranque antes de spawnear
+    # Small delay so gz sim is running before spawning the model
     spawn_delayed = TimerAction(period=2.0, actions=[spawn_rc])
 
     rviz_node = Node(
@@ -91,37 +91,37 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "use_sim_time",
                 default_value="true",
-                description="Usar reloj simulado de Gazebo",
+                description="Use Gazebo simulated clock",
             ),
             DeclareLaunchArgument(
                 "world",
                 default_value=default_world,
-                description="Mundo de Gazebo a cargar",
+                description="Gazebo world to load",
             ),
             DeclareLaunchArgument(
                 "x",
                 default_value="0.0",
-                description="Posicion inicial en X",
+                description="Initial X position",
             ),
             DeclareLaunchArgument(
                 "y",
                 default_value="0.0",
-                description="Posicion inicial en Y",
+                description="Initial Y position",
             ),
             DeclareLaunchArgument(
                 "z",
                 default_value="0.1",
-                description="Posicion inicial en Z",
+                description="Initial Z position",
             ),
             DeclareLaunchArgument(
                 "rviz",
                 default_value="false",
-                description="Abrir RViz con la descripcion",
+                description="Launch RViz with the description",
             ),
             DeclareLaunchArgument(
                 "rviz_config",
                 default_value=default_rviz,
-                description="Configuracion de RViz",
+                description="RViz configuration file",
             ),
             gz_sim,
             joint_state_publisher,
