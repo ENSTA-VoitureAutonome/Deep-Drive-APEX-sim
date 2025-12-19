@@ -41,14 +41,14 @@
         <inertia ixx="${wheel_ixx}" ixy="0.0" ixz="0.0" iyy="${wheel_iyy}" iyz="0.0" izz="${wheel_izz}"/>
       </inertial>
       <visual>
-        <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
         <geometry>
           <cylinder radius="${wheel_radius}" length="${wheel_thickness}"/>
         </geometry>
         <material name="wheel_black"/>
       </visual>
       <collision>
-        <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
         <geometry>
           <cylinder radius="${wheel_radius}" length="${wheel_thickness}"/>
         </geometry>
@@ -57,8 +57,8 @@
     <joint name="${name}_joint" type="continuous">
       <parent link="${parent}"/>
       <child link="${name}"/>
-      <origin xyz="${xyz}" rpy="0 0 0"/>
-      <axis xyz="0 1 0"/>
+      <origin xyz="${xyz}" rpy="1.5708 0 0"/>
+      <axis xyz="0 0 1"/>
     </joint>
     <gazebo reference="${name}">
       <mu1>1.2</mu1>

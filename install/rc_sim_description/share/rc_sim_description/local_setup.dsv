@@ -1,2 +1,1 @@
-source;share/rc_sim_description/environment/ament_prefix_path.sh
-source;share/rc_sim_description/environment/path.sh
+/home/santiago/AiAtonomousRc/build/rc_sim_description/ament_cmake_environment_hooks/local_setup.dsv

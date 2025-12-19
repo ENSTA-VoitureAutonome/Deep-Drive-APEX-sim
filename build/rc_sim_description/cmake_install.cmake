@@ -43,6 +43,10 @@ if(NOT DEFINED CMAKE_OBJDUMP)
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
+  include("/home/santiago/AiAtonomousRc/build/rc_sim_description/ament_cmake_symlink_install/ament_cmake_symlink_install.cmake")
+endif()
+
+if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
   file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/rc_sim_description" TYPE DIRECTORY FILES
     "/home/santiago/AiAtonomousRc/src/rc_sim_description/launch"
     "/home/santiago/AiAtonomousRc/src/rc_sim_description/urdf"
@@ -50,65 +54,6 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
     "/home/santiago/AiAtonomousRc/src/rc_sim_description/config"
     "/home/santiago/AiAtonomousRc/src/rc_sim_description/meshes"
     FILES_MATCHING REGEX "/[^/]*\\.launch\\.py$" REGEX "/[^/]*\\.xacro$" REGEX "/[^/]*\\.rviz$" REGEX "/[^/]*\\.world$" REGEX "/[^/]*\\.stl$" REGEX "/[^/]*\\.dae$" REGEX "/[^/]*\\.obj$")
-endif()
-
-if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/ament_index/resource_index/package_run_dependencies" TYPE FILE FILES "/home/santiago/AiAtonomousRc/build/rc_sim_description/ament_cmake_index/share/ament_index/resource_index/package_run_dependencies/rc_sim_description")
-endif()
-
-if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/ament_index/resource_index/parent_prefix_path" TYPE FILE FILES "/home/santiago/AiAtonomousRc/build/rc_sim_description/ament_cmake_index/share/ament_index/resource_index/parent_prefix_path/rc_sim_description")
-endif()
-
-if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/rc_sim_description/environment" TYPE FILE FILES "/opt/ros/jazzy/share/ament_cmake_core/cmake/environment_hooks/environment/ament_prefix_path.sh")
-endif()
-
-if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/rc_sim_description/environment" TYPE FILE FILES "/home/santiago/AiAtonomousRc/build/rc_sim_description/ament_cmake_environment_hooks/ament_prefix_path.dsv")
-endif()
-
-if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/rc_sim_description/environment" TYPE FILE FILES "/opt/ros/jazzy/share/ament_cmake_core/cmake/environment_hooks/environment/path.sh")
-endif()
-
-if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/rc_sim_description/environment" TYPE FILE FILES "/home/santiago/AiAtonomousRc/build/rc_sim_description/ament_cmake_environment_hooks/path.dsv")
-endif()
-
-if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/rc_sim_description" TYPE FILE FILES "/home/santiago/AiAtonomousRc/build/rc_sim_description/ament_cmake_environment_hooks/local_setup.bash")
-endif()
-
-if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/rc_sim_description" TYPE FILE FILES "/home/santiago/AiAtonomousRc/build/rc_sim_description/ament_cmake_environment_hooks/local_setup.sh")
-endif()
-
-if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/rc_sim_description" TYPE FILE FILES "/home/santiago/AiAtonomousRc/build/rc_sim_description/ament_cmake_environment_hooks/local_setup.zsh")
-endif()
-
-if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/rc_sim_description" TYPE FILE FILES "/home/santiago/AiAtonomousRc/build/rc_sim_description/ament_cmake_environment_hooks/local_setup.dsv")
-endif()
-
-if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/rc_sim_description" TYPE FILE FILES "/home/santiago/AiAtonomousRc/build/rc_sim_description/ament_cmake_environment_hooks/package.dsv")
-endif()
-
-if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/ament_index/resource_index/packages" TYPE FILE FILES "/home/santiago/AiAtonomousRc/build/rc_sim_description/ament_cmake_index/share/ament_index/resource_index/packages/rc_sim_description")
-endif()
-
-if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/rc_sim_description/cmake" TYPE FILE FILES
-    "/home/santiago/AiAtonomousRc/build/rc_sim_description/ament_cmake_core/rc_sim_descriptionConfig.cmake"
-    "/home/santiago/AiAtonomousRc/build/rc_sim_description/ament_cmake_core/rc_sim_descriptionConfig-version.cmake"
-    )
-endif()
-
-if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/rc_sim_description" TYPE FILE FILES "/home/santiago/AiAtonomousRc/src/rc_sim_description/package.xml")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT)

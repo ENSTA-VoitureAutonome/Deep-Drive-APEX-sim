@@ -43,11 +43,11 @@ rosdep update
 gz --help
 ```
 
-6) Build the workspace:
+6) Build the workspace (use symlink install so changes in `urdf/` are picked up without reinstalling):
 ```
 cd ~/AiAtonomousRc
 source /opt/ros/jazzy/setup.bash
-colcon build
+colcon build --symlink-install
 source install/setup.bash
 ```
 
@@ -55,6 +55,14 @@ source install/setup.bash
 Launch Gazebo and spawn the car:
 ```
 ros2 launch rc_sim_description spawn_rc_car.launch.py z:=0.15
+```
+
+## After changes to the Xacro/URDF
+If you edit `src/rc_sim_description/urdf/rc_car.urdf.xacro`, rebuild and re-source:
+```
+cd ~/AiAtonomousRc
+colcon build --packages-select rc_sim_description --symlink-install
+source install/setup.bash
 ```
 
 Useful arguments:
