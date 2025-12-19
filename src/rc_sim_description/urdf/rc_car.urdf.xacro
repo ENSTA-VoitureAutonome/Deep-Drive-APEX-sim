@@ -41,14 +41,14 @@
         <inertia ixx="${wheel_ixx}" ixy="0.0" ixz="0.0" iyy="${wheel_iyy}" iyz="0.0" izz="${wheel_izz}"/>
       </inertial>
       <visual>
-        <origin xyz="0 0 0" rpy="0 1.5708 0"/>
+        <origin xyz="0 0 0" rpy="1.5708 0 0"/>
         <geometry>
           <cylinder radius="${wheel_radius}" length="${wheel_thickness}"/>
         </geometry>
         <material name="wheel_black"/>
       </visual>
       <collision>
-        <origin xyz="0 0 0" rpy="0 1.5708 0"/>
+        <origin xyz="0 0 0" rpy="1.5708 0 0"/>
         <geometry>
           <cylinder radius="${wheel_radius}" length="${wheel_thickness}"/>
         </geometry>
