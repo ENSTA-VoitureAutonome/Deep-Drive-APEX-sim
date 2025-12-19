@@ -45,7 +45,7 @@
       <real_time_update_rate>1000.0</real_time_update_rate>
     </physics>
 
-    <!-- Rectangular tramo que hace de pista sencilla -->
+    <!-- Simple rectangular track -->
     <model name="asphalt_track">
       <static>true</static>
       <pose>0 0 0 0 0 0</pose>
@@ -71,7 +71,7 @@
             <specular>0.05 0.05 0.05 1</specular>
           </material>
         </visual>
-        <!-- Línea central de pista -->
+        <!-- Center line -->
         <visual name="center_line">
           <geometry>
             <box>
@@ -88,12 +88,12 @@
       </link>
     </model>
 
-    <!-- Indicador de direccion con forma de flecha -->
+    <!-- Arrow-shaped direction marker -->
     <model name="arrow_marker">
       <static>true</static>
       <pose>-4 0 0 0 0 0</pose>
       <link name="arrow">
-        <!-- base -->
+        <!-- Base -->
         <collision name="stand_collision">
           <geometry>
             <cylinder>
@@ -117,7 +117,7 @@
           </material>
         </visual>
 
-        <!-- flecha cuerpo -->
+        <!-- Arrow body -->
         <visual name="arrow_shaft">
           <geometry>
             <box>
@@ -130,7 +130,7 @@
             <diffuse>0.05 0.55 0.95 1</diffuse>
           </material>
         </visual>
-        <!-- cabeza de flecha aproximada con dos cajas -->
+        <!-- Arrow head built with two boxes -->
         <visual name="arrow_head_left">
           <geometry>
             <box>
