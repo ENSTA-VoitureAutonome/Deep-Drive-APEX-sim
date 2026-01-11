@@ -4,6 +4,7 @@
   <xacro:property name="chassis_length" value="0.46"/>
   <xacro:property name="chassis_width" value="0.28"/>
   <xacro:property name="chassis_height" value="0.10"/>
+  <xacro:property name="chassis_clearance" value="0.03"/>
   <xacro:property name="wheel_radius" value="0.06"/>
   <xacro:property name="wheel_thickness" value="0.03"/>
 
@@ -101,19 +102,19 @@
 
   <link name="base_link">
     <inertial>
-      <origin xyz="0 0 ${chassis_height / 2.0}" rpy="0 0 0"/>
+      <origin xyz="0 0 ${chassis_height / 2.0 + chassis_clearance}" rpy="0 0 0"/>
       <mass value="${chassis_mass}"/>
       <inertia ixx="${chassis_ixx}" ixy="0.0" ixz="0.0" iyy="${chassis_iyy}" iyz="0.0" izz="${chassis_izz}"/>
     </inertial>
     <visual>
-      <origin xyz="0 0 ${chassis_height / 2.0}" rpy="0 0 0"/>
+      <origin xyz="0 0 ${chassis_height / 2.0 + chassis_clearance}" rpy="0 0 0"/>
       <geometry>
         <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
       </geometry>
       <material name="chassis_grey"/>
     </visual>
     <collision>
-      <origin xyz="0 0 ${chassis_height / 2.0}" rpy="0 0 0"/>
+      <origin xyz="0 0 ${chassis_height / 2.0 + chassis_clearance}" rpy="0 0 0"/>
       <geometry>
         <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
       </geometry>
@@ -131,5 +132,40 @@
     <mu2>1.2</mu2>
     <kp>80000.0</kp>
     <kd>20.0</kd>
+  </gazebo>
+
+  <gazebo>
+    <plugin
+      filename="gz-sim-joint-controller-system"
+      name="gz::sim::systems::JointController">
+      <joint_name>rear_left_wheel_joint</joint_name>
+    </plugin>
+    <plugin
+      filename="gz-sim-joint-controller-system"
+      name="gz::sim::systems::JointController">
+      <joint_name>rear_right_wheel_joint</joint_name>
+    </plugin>
+    <plugin
+      filename="gz-sim-joint-position-controller-system"
+      name="gz::sim::systems::JointPositionController">
+      <joint_name>front_left_wheel_steer_joint</joint_name>
+      <topic>/model/rc_car/joint/front_left_wheel_steer_joint/cmd_pos</topic>
+      <p_gain>20.0</p_gain>
+      <i_gain>0.1</i_gain>
+      <d_gain>0.5</d_gain>
+      <cmd_max>0.6</cmd_max>
+      <cmd_min>-0.6</cmd_min>
+    </plugin>
+    <plugin
+      filename="gz-sim-joint-position-controller-system"
+      name="gz::sim::systems::JointPositionController">
+      <joint_name>front_right_wheel_steer_joint</joint_name>
+      <topic>/model/rc_car/joint/front_right_wheel_steer_joint/cmd_pos</topic>
+      <p_gain>20.0</p_gain>
+      <i_gain>0.1</i_gain>
+      <d_gain>0.5</d_gain>
+      <cmd_max>0.6</cmd_max>
+      <cmd_min>-0.6</cmd_min>
+    </plugin>
   </gazebo>
 </robot>

@@ -54,8 +54,46 @@ source install/setup.bash
 ## Run
 Launch Gazebo and spawn the car:
 ```
-ros2 launch rc_sim_description spawn_rc_car.launch.py z:=0.15
+ros2 launch rc_sim_description spawn_rc_car.launch.py
 ```
+
+## Control nodes (nodos de control)
+This package uses a ROS <-> Gazebo bridge to drive joints:
+- `rear_wheel_speed_bridge.py`: subscribes to `/rear_wheel_speed` and `/steering_angle` (Float64) and forwards them to Gazebo joints. It is enabled by default in `spawn_rc_car.launch.py` (`rear_wheel_bridge:=true`).
+- `turning_command_mapper.py`: subscribes to `/cmd_vel` (Twist). Uses `linear.x` as vehicle speed (m/s) and `angular.z` as steering angle. By default it expects degrees (`steering_angle_unit=deg`) and publishes `/rear_wheel_speed` (rad/s) and `/steering_angle` (rad).
+- `rear_wheel_speed_publisher.py`: demo publisher for `/rear_wheel_speed` and `/steering_angle`.
+
+### Example (3 terminals)
+Terminal 1 (Gazebo + spawn + bridge):
+```
+source /opt/ros/jazzy/setup.bash
+cd ~/AiAtonomousRc
+colcon build --packages-select rc_sim_description --symlink-install
+source install/setup.bash
+ros2 launch rc_sim_description spawn_rc_car.launch.py
+```
+
+Terminal 2 (single-input controller):
+```
+source /opt/ros/jazzy/setup.bash
+cd ~/AiAtonomousRc
+source install/setup.bash
+ros2 run rc_sim_description turning_command_mapper.py --ros-args \
+  -p turning_mode:=steering_angle \
+  -p steering_angle_unit:=deg
+```
+
+Terminal 3 (command input):
+```
+source /opt/ros/jazzy/setup.bash
+cd ~/AiAtonomousRc
+source install/setup.bash
+ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
+  "{linear: {x: 0.6}, angular: {z: 20.0}}" -r 20
+```
+
+Note: Do not run `rear_wheel_speed_publisher.py` at the same time as
+`turning_command_mapper.py` unless you want overlapping commands.
 
 ## After changes to the Xacro/URDF
 If you edit `src/rc_sim_description/urdf/rc_car.urdf.xacro`, rebuild and re-source:
