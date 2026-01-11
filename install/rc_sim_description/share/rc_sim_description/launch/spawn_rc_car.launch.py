@@ -26,6 +26,15 @@ def generate_launch_description():
     z_pos = LaunchConfiguration("z")
     rviz = LaunchConfiguration("rviz")
     rviz_config = LaunchConfiguration("rviz_config")
+    rear_wheel_bridge = LaunchConfiguration("rear_wheel_bridge")
+    rear_wheel_publisher = LaunchConfiguration("rear_wheel_publisher")
+    rear_wheel_speed = LaunchConfiguration("rear_wheel_speed")
+    steering_angle = LaunchConfiguration("steering_angle")
+    rear_wheel_publish_rate = LaunchConfiguration("rear_wheel_publish_rate")
+    control_publish_rate = LaunchConfiguration("control_publish_rate")
+    wheel_base = LaunchConfiguration("wheel_base")
+    track_width = LaunchConfiguration("track_width")
+    steering_limit = LaunchConfiguration("steering_limit")
 
     # Command expects a space between executable and path
     robot_description = Command(["xacro ", robot_xacro])
@@ -86,6 +95,37 @@ def generate_launch_description():
         condition=IfCondition(rviz),
     )
 
+    rear_wheel_bridge_node = Node(
+        package="rc_sim_description",
+        executable="rear_wheel_speed_bridge.py",
+        name="rear_wheel_speed_bridge",
+        output="screen",
+        parameters=[
+            {
+                "wheel_base": wheel_base,
+                "track_width": track_width,
+                "steering_limit": steering_limit,
+                "publish_rate": control_publish_rate,
+            }
+        ],
+        condition=IfCondition(rear_wheel_bridge),
+    )
+
+    rear_wheel_publisher_node = Node(
+        package="rc_sim_description",
+        executable="rear_wheel_speed_publisher.py",
+        name="rear_wheel_speed_publisher",
+        output="screen",
+        parameters=[
+            {
+                "speed": rear_wheel_speed,
+                "steering_angle": steering_angle,
+                "publish_rate": rear_wheel_publish_rate,
+            }
+        ],
+        condition=IfCondition(rear_wheel_publisher),
+    )
+
     return LaunchDescription(
         [
             DeclareLaunchArgument(
@@ -110,7 +150,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "z",
-                default_value="0.1",
+                default_value="0.02",
                 description="Initial Z position",
             ),
             DeclareLaunchArgument(
@@ -123,10 +163,57 @@ def generate_launch_description():
                 default_value=default_rviz,
                 description="RViz configuration file",
             ),
+            DeclareLaunchArgument(
+                "rear_wheel_bridge",
+                default_value="true",
+                description="Launch the rear wheel speed bridge node",
+            ),
+            DeclareLaunchArgument(
+                "rear_wheel_publisher",
+                default_value="false",
+                description="Launch the demo rear wheel speed publisher",
+            ),
+            DeclareLaunchArgument(
+                "rear_wheel_speed",
+                default_value="5.0",
+                description="Rear wheel angular speed (rad/s) for demo publisher",
+            ),
+            DeclareLaunchArgument(
+                "steering_angle",
+                default_value="0.0",
+                description="Steering angle (rad) for demo publisher",
+            ),
+            DeclareLaunchArgument(
+                "rear_wheel_publish_rate",
+                default_value="20.0",
+                description="Publish rate (Hz) for demo publisher",
+            ),
+            DeclareLaunchArgument(
+                "control_publish_rate",
+                default_value="30.0",
+                description="Publish rate (Hz) for control bridge",
+            ),
+            DeclareLaunchArgument(
+                "wheel_base",
+                default_value="0.32",
+                description="Wheelbase for Ackermann steering (m)",
+            ),
+            DeclareLaunchArgument(
+                "track_width",
+                default_value="0.29",
+                description="Track width for Ackermann steering (m)",
+            ),
+            DeclareLaunchArgument(
+                "steering_limit",
+                default_value="0.6",
+                description="Max steering angle (rad)",
+            ),
             gz_sim,
             joint_state_publisher,
             robot_state_publisher,
             spawn_delayed,
             rviz_node,
+            rear_wheel_bridge_node,
+            rear_wheel_publisher_node,
         ]
     )

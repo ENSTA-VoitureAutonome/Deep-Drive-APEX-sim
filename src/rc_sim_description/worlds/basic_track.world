@@ -25,6 +25,22 @@
               <size>60 60 0.05</size>
             </box>
           </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>1.2</mu>
+                <mu2>1.2</mu2>
+                <slip1>0.0</slip1>
+                <slip2>0.0</slip2>
+              </ode>
+            </friction>
+            <contact>
+              <ode>
+                <kp>100000.0</kp>
+                <kd>10.0</kd>
+              </ode>
+            </contact>
+          </surface>
         </collision>
         <visual name="ground_visual">
           <geometry>
@@ -57,6 +73,22 @@
             </box>
           </geometry>
           <pose>0 0 0.01 0 0 0</pose>
+          <surface>
+            <friction>
+              <ode>
+                <mu>1.2</mu>
+                <mu2>1.2</mu2>
+                <slip1>0.0</slip1>
+                <slip2>0.0</slip2>
+              </ode>
+            </friction>
+            <contact>
+              <ode>
+                <kp>100000.0</kp>
+                <kd>10.0</kd>
+              </ode>
+            </contact>
+          </surface>
         </collision>
         <visual name="road_visual">
           <geometry>
