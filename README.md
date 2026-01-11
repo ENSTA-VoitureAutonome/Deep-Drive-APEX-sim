@@ -56,6 +56,7 @@ Launch Gazebo and spawn the car:
 ```
 ros2 launch rc_sim_description spawn_rc_car.launch.py
 ```
+Defaults: `x:=0.0`, `y:=-2.5`, `z:=0.02`.
 
 ## Control nodes (nodos de control)
 This package uses a ROS <-> Gazebo bridge to drive joints:

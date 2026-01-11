@@ -145,7 +145,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "y",
-                default_value="0.0",
+                default_value="-2.5",
                 description="Initial Y position",
             ),
             DeclareLaunchArgument(
