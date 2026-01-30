@@ -1,1 +1,1 @@
-xacro;ros_gz_sim;robot_state_publisher;joint_state_publisher;rviz2;rclpy;std_msgs;geometry_msgs;ament_lint_auto;ament_lint_common
+xacro;ros_gz_sim;robot_state_publisher;joint_state_publisher;rviz2;rclpy;std_msgs;geometry_msgs;sensor_msgs;ament_lint_auto;ament_lint_common

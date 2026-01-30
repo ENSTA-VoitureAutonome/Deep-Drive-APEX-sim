@@ -35,6 +35,8 @@ def generate_launch_description():
     wheel_base = LaunchConfiguration("wheel_base")
     track_width = LaunchConfiguration("track_width")
     steering_limit = LaunchConfiguration("steering_limit")
+    lidar_bridge = LaunchConfiguration("lidar_bridge")
+    lidar_reader = LaunchConfiguration("lidar_reader")
 
     # Command expects a space between executable and path
     robot_description = Command(["xacro ", robot_xacro])
@@ -126,6 +128,31 @@ def generate_launch_description():
         condition=IfCondition(rear_wheel_publisher),
     )
 
+    lidar_bridge_node = Node(
+        package="ros_gz_bridge",
+        executable="parameter_bridge",
+        name="scan_bridge",
+        output="screen",
+        arguments=["/scan@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan"],
+        parameters=[{"use_sim_time": use_sim_time}],
+        condition=IfCondition(lidar_bridge),
+    )
+
+    lidar_reader_node = Node(
+        package="rc_sim_description",
+        executable="gazebo_lidar_reader_node.py",
+        name="gazebo_lidar_reader",
+        output="screen",
+        arguments=[
+            "--topic",
+            "/scan",
+            "--publish-topic",
+            "/lidar_processed",
+            "--use-sim-time",
+        ],
+        condition=IfCondition(lidar_reader),
+    )
+
     return LaunchDescription(
         [
             DeclareLaunchArgument(
@@ -208,6 +235,16 @@ def generate_launch_description():
                 default_value="0.6",
                 description="Max steering angle (rad)",
             ),
+            DeclareLaunchArgument(
+                "lidar_bridge",
+                default_value="true",
+                description="Launch ros_gz_bridge for /scan LaserScan",
+            ),
+            DeclareLaunchArgument(
+                "lidar_reader",
+                default_value="true",
+                description="Launch GazeboLidarReader to publish /lidar_processed",
+            ),
             gz_sim,
             joint_state_publisher,
             robot_state_publisher,
@@ -215,5 +252,7 @@ def generate_launch_description():
             rviz_node,
             rear_wheel_bridge_node,
             rear_wheel_publisher_node,
+            lidar_bridge_node,
+            lidar_reader_node,
         ]
     )

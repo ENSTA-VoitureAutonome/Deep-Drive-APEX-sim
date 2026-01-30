@@ -1,0 +1,168 @@
+\documentclass[conference]{IEEEtran}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{amsmath}
+\usepackage{lipsum}
+
+\title{Etat Technique du Simulateur RC et Evolution Attendue}
+
+\author{
+    \IEEEauthorblockN{P\^ole Simulation}
+}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Ce document decrit l'etat actuel du simulateur RC base sur ROS 2 et Gazebo (gz). Il detaille l'architecture logicielle, le modele physique, les flux de donnees et les n\oe uds de commande, avec une explication theorique des transformations cinematiques et des lois d'actionnement. Il propose ensuite une feuille de route technique: integration d'un Lidar avec erreurs injectables, et strategie de calibration parametrique pour rapprocher la simulation du comportement du systeme reel.
+\end{abstract}
+
+\section{Introduction}
+Le projet vise a valider des algorithmes de navigation et de perception sans risques materiels. La simulation actuelle fournit un vehicule RC dynamique, une piste de test, et des n\oe uds ROS 2 qui convertissent des commandes de haut niveau en consignes de joints Gazebo. L'objectif de ce document est double: (i) formaliser l'existant sous une forme technique et structuree, (ii) definir les evolutions attendues vers un jumeau numerique plus fidele et instrumente.
+
+\section{Perimetre et Organisation du Code}
+
+\subsection{Paquet principal}
+Le paquet \texttt{rc\_sim\_description} regroupe:
+\begin{itemize}
+  \item \textbf{Modele URDF/Xacro} du vehicule: \texttt{urdf/rc\_car.urdf.xacro}.
+  \item \textbf{Mondes SDF} pour essais: \texttt{worlds/basic\_track.world} et \texttt{worlds/flat\_track.world}.
+  \item \textbf{Launch} de demarrage: \texttt{launch/spawn\_rc\_car.launch.py}.
+  \item \textbf{N\oe uds de commande} (Python): \texttt{scripts/}.
+\end{itemize}
+
+\subsection{Architecture ROS 2}
+L'architecture est basee sur une separation claire des responsabilites:
+\begin{itemize}
+  \item \textbf{Description robot} via \texttt{robot\_state\_publisher} et \texttt{joint\_state\_publisher}.
+  \item \textbf{Simulation dynamique} via Gazebo (gz).
+  \item \textbf{Commande} via n\oe uds ROS 2 convertissant des messages en consignes de joints.
+  \item \textbf{Bridge ROS--Gazebo} pour publier directement dans le transport gz.
+\end{itemize}
+
+\section{Modele Physique et Simulation}
+
+\subsection{Structure mecanique}
+Le vehicule est modele par un chassis parallelepipedique et quatre roues. Les roues avant sont montagees sur une articulation de direction (joint revolute), les roues arriere sur des joints continus (joint continuous). Les parametres de masse et d'inertie sont fournis comme approximations initiales pour assurer une dynamique stable.
+
+\subsection{Parametres physiques}
+Les parametres critiques sont:
+\begin{itemize}
+  \item \textbf{Geometrie}: empattement $L$, voie $W$, rayon de roue $r$.
+  \item \textbf{Inertie}: $I_{xx}, I_{yy}, I_{zz}$ du chassis et des roues.
+  \item \textbf{Frottements}: coefficients $\mu_1$, $\mu_2$ sur les surfaces de contact.
+  \item \textbf{Limites de direction}: $\delta_{min}$, $\delta_{max}$ dans le joint de direction.
+\end{itemize}
+
+\subsection{Plugins Gazebo}
+Des plugins de controle de joints sont declares:
+\begin{itemize}
+  \item \textbf{JointController} pour les roues arriere (commande en vitesse).
+  \item \textbf{JointPositionController} pour les roues avant (commande en position).
+\end{itemize}
+Les gains $p/i/d$ et les saturations sont definis dans le fichier Xacro. Ces gains impactent directement la reponse transitoire de direction (temps de montee, depassement).
+
+\subsection{Monde de simulation}
+Le monde \texttt{basic\_track.world} contient un plan, un ovale de piste et des murs. Les parametres de contact dans ODE sont fixes pour limiter les effets numeriques. Le monde \texttt{flat\_track.world} sert de reference minimale pour tests de base.
+
+\section{N\oe uds de Commande et Theorie}
+
+\subsection{TurningCommandMapper}
+Le n\oe ud \texttt{turning\_command\_mapper.py} convertit \texttt{/cmd\_vel} en consignes de direction et de vitesse de roue arriere. Il supporte plusieurs modes: \textit{curvature}, \textit{radius}, \textit{steering\_angle}, \textit{yaw\_rate}. Les relations principales sont:
+\begin{equation}
+\delta = \arctan(L \kappa) \quad \text{ou} \quad \delta = \arctan\left(\frac{L}{R}\right)
+\end{equation}
+\begin{equation}
+\dot{\psi} = \frac{v}{L}\tan(\delta)
+\end{equation}
+\begin{equation}
+\omega_{rear} = \frac{v}{r}
+\end{equation}
+Le n\oe ud applique des limites sur $\delta$ et gere les cas degenerate (vitesse faible, rayon trop petit). Il peut egalement publier des valeurs de diagnostic (rayon de virage et taux de lacet).
+
+\subsection{Cinematique Ackermann}
+En mode Ackermann, les angles internes et externes de direction sont:
+\begin{equation}
+\delta_{in} = \arctan\left(\frac{L}{R - W/2}\right), \quad
+\delta_{out} = \arctan\left(\frac{L}{R + W/2}\right)
+\end{equation}
+Cette correction est essentielle pour reduire le glissement lateral en virage.
+
+\subsection{RearWheelSpeedBridge}
+Le n\oe ud \texttt{rear\_wheel\_speed\_bridge.py} fait le pont entre ROS 2 et le transport \texttt{gz}. Il:
+\begin{itemize}
+  \item ecoute \texttt{/rear\_wheel\_speed} et \texttt{/steering\_angle},
+  \item publie des consignes de vitesse aux joints arriere,
+  \item calcule et publie les angles de direction gauche/droite via Ackermann,
+  \item republique a une frequence fixe pour stabiliser la simulation.
+\end{itemize}
+
+\subsection{RearWheelSpeedPublisher}
+Le n\oe ud \texttt{rear\_wheel\_speed\_publisher.py} est un generateur de commandes de test (vitesse et angle fixes a cadence parametree). Il sert a la validation rapide du comportement dynamique.
+
+\section{Flux de Donnees et Interface}
+
+\subsection{Topics principaux}
+\begin{itemize}
+  \item Entr\`ee: \texttt{/cmd\_vel} (\texttt{geometry\_msgs/Twist}).
+  \item Sorties de commande: \texttt{/rear\_wheel\_speed}, \texttt{/steering\_angle} (\texttt{std\_msgs/Float64}).
+  \item Debug: \texttt{/yaw\_rate}, \texttt{/turn\_radius} (optionnel).
+\end{itemize}
+
+\subsection{Parametres configurables}
+Les parametres exposes par les n\oe uds permettent d'ajuster:
+\begin{itemize}
+  \item la geometrie ($L$, $W$, $r$),
+  \item les limites de direction ($\delta_{max}$),
+  \item les modes de conversion (curvature, radius, yaw\_rate),
+  \item la frequence de publication.
+\end{itemize}
+
+\section{Limites Identifiees}
+\begin{itemize}
+  \item Absence de capteurs simules (Lidar, camera, IMU).
+  \item Pas de modeles d'erreur systematique (latence, bruit, biais).
+  \item Parametres physiques non calibres par rapport au vehicule reel.
+  \item Dynamique des pneus simplifiee (glissement et saturation limites).
+\end{itemize}
+
+\section{Evolutions Attenues}
+
+\subsection{Simulation Lidar avec erreurs injectables}
+L'ajout d'un Lidar est prevu via un plugin \texttt{ray} ou \texttt{gpu\_lidar}. Le capteur publiera \texttt{LaserScan} ou \texttt{PointCloud2} via le bridge ROS--Gazebo. Le modele d'erreur attendu comprend:
+\begin{itemize}
+  \item \textbf{Bruit additif} sur la distance: $z = d + \mathcal{N}(0, \sigma^2)$.
+  \item \textbf{Biais lent} modele par marche aleatoire: $b_{k+1} = b_k + \epsilon$, avec $\epsilon \sim \mathcal{N}(0, \sigma_b^2)$.
+  \item \textbf{Dropout} de mesures: probabilite $p_{drop}$ par rayon.
+  \item \textbf{Saturation de plage} (min/max) et quantification angulaire.
+\end{itemize}
+Ces erreurs doivent etre parametrees via YAML ou arguments de launch pour permettre des campagnes d'essais reproductibles.
+
+\subsection{Calibrage et identification de parametres}
+L'objectif est d'aligner la simulation sur le comportement reel par identification parametrique:
+\begin{enumerate}
+  \item \textbf{Acquisition} de donnees reelles (\texttt{ros2 bag}): trajectoires, vitesse, commandes, taux de lacet.
+  \item \textbf{Parametres a ajuster}: $L$, $W$, $r$, masse, inerties, frictions $\mu$, gains de direction, latence.
+  \item \textbf{Fonction cout}: minimisation d'erreurs sur trajectoire, vitesse et yaw rate (MSE, RMSE, ITAE).
+  \item \textbf{Optimisation}: grille, CMA-ES, ou optimisation bayesienne selon le cout de simulation.
+  \item \textbf{Validation} sur scenarios differents pour eviter le sur-ajustement.
+\end{enumerate}
+
+\subsection{Definition d'un protocole de test}
+Pour garantir une convergence robuste, un protocole de test doit inclure:
+\begin{itemize}
+  \item trajectoires simples (ligne droite, cercle, huit),
+  \item vitesses et angles limites,
+  \item evaluation sur le meme signal d'entree pour simulation et reel.
+\end{itemize}
+
+\section{Conclusion}
+Le simulateur actuel fournit une base operationnelle solide pour la commande et l'execution dans Gazebo. La prochaine phase doit integrer des capteurs realistes, un modele d'erreurs explicite et un cycle de calibration. Ces evolutions permettront d'obtenir un jumeau numerique plus representatif, condition cle pour developper des algorithmes robustes de perception et de controle.
+
+\bibliographystyle{IEEEtran}
+% \bibliography{references}
+
+\end{document}
