@@ -1,9 +1,0 @@
-/home/santiago/AiAtonomousRc/build/rc_sim_description/CMakeFiles/uninstall.dir
-/home/santiago/AiAtonomousRc/build/rc_sim_description/CMakeFiles/rc_sim_description_uninstall.dir
-/home/santiago/AiAtonomousRc/build/rc_sim_description/CMakeFiles/test.dir
-/home/santiago/AiAtonomousRc/build/rc_sim_description/CMakeFiles/edit_cache.dir
-/home/santiago/AiAtonomousRc/build/rc_sim_description/CMakeFiles/rebuild_cache.dir
-/home/santiago/AiAtonomousRc/build/rc_sim_description/CMakeFiles/list_install_components.dir
-/home/santiago/AiAtonomousRc/build/rc_sim_description/CMakeFiles/install.dir
-/home/santiago/AiAtonomousRc/build/rc_sim_description/CMakeFiles/install/local.dir
-/home/santiago/AiAtonomousRc/build/rc_sim_description/CMakeFiles/install/strip.dir
