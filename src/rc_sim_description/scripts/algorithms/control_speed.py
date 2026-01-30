@@ -1,4 +1,7 @@
-from algorithm.constants import *
+try:
+    from algorithm.constants import *  # type: ignore  # noqa: F403
+except Exception:
+    from constants import *  # type: ignore  # noqa: F403
 import numpy as np
 
 def compute_speed(convoluted_lidar, target_angle: float):

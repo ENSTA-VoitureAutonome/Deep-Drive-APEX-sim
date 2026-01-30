@@ -1,4 +1,7 @@
-from algorithm.constants import *
+try:
+    from algorithm.constants import *  # type: ignore  # noqa: F403
+except Exception:
+    from constants import *  # type: ignore  # noqa: F403
 from scipy.signal import convolve
 
 def get_nonzero_points_in_hitbox(distances):

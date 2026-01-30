@@ -1,5 +1,11 @@
-from algorithm.constants import STEER_VARIATION_RATE, STEER_CENTER
-from algorithm.interfaces import SteerInterface
+try:
+    from algorithm.constants import STEER_VARIATION_RATE, STEER_CENTER  # type: ignore
+except Exception:
+    from constants import STEER_VARIATION_RATE, STEER_CENTER  # type: ignore
+try:
+    from algorithm.interfaces import SteerInterface  # type: ignore
+except Exception:
+    from interfaces import SteerInterface  # type: ignore
 from raspberry_pwm import PWM
 import algorithm.voiture_logger as voiture_logger
 import time

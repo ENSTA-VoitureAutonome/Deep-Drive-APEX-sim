@@ -27,16 +27,13 @@ def generate_launch_description():
     rviz = LaunchConfiguration("rviz")
     rviz_config = LaunchConfiguration("rviz_config")
     rear_wheel_bridge = LaunchConfiguration("rear_wheel_bridge")
-    rear_wheel_publisher = LaunchConfiguration("rear_wheel_publisher")
-    rear_wheel_speed = LaunchConfiguration("rear_wheel_speed")
-    steering_angle = LaunchConfiguration("steering_angle")
-    rear_wheel_publish_rate = LaunchConfiguration("rear_wheel_publish_rate")
     control_publish_rate = LaunchConfiguration("control_publish_rate")
     wheel_base = LaunchConfiguration("wheel_base")
     track_width = LaunchConfiguration("track_width")
     steering_limit = LaunchConfiguration("steering_limit")
     lidar_bridge = LaunchConfiguration("lidar_bridge")
     lidar_reader = LaunchConfiguration("lidar_reader")
+    control_node = LaunchConfiguration("control_node")
 
     # Command expects a space between executable and path
     robot_description = Command(["xacro ", robot_xacro])
@@ -104,29 +101,12 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {
-                "wheel_base": wheel_base,
-                "track_width": track_width,
-                "steering_limit": steering_limit,
                 "publish_rate": control_publish_rate,
             }
         ],
         condition=IfCondition(rear_wheel_bridge),
     )
 
-    rear_wheel_publisher_node = Node(
-        package="rc_sim_description",
-        executable="rear_wheel_speed_publisher.py",
-        name="rear_wheel_speed_publisher",
-        output="screen",
-        parameters=[
-            {
-                "speed": rear_wheel_speed,
-                "steering_angle": steering_angle,
-                "publish_rate": rear_wheel_publish_rate,
-            }
-        ],
-        condition=IfCondition(rear_wheel_publisher),
-    )
 
     lidar_bridge_node = Node(
         package="ros_gz_bridge",
@@ -151,6 +131,23 @@ def generate_launch_description():
             "--use-sim-time",
         ],
         condition=IfCondition(lidar_reader),
+    )
+
+    control_node = Node(
+        package="rc_sim_description",
+        executable="voiture_control_node.py",
+        name="voiture_control_node",
+        output="screen",
+        parameters=[
+            {
+                "lidar_topic": "/lidar_processed",
+                "measured_wheelspeed_topic": "/measured_wheelspeed",
+                "rear_wheel_speed_topic": "/rear_wheel_speed",
+                "steering_angle_topic": "/steering_angle",
+                "control_rate_hz": 30.0,
+            }
+        ],
+        condition=IfCondition(control_node),
     )
 
     return LaunchDescription(
@@ -196,26 +193,6 @@ def generate_launch_description():
                 description="Launch the rear wheel speed bridge node",
             ),
             DeclareLaunchArgument(
-                "rear_wheel_publisher",
-                default_value="false",
-                description="Launch the demo rear wheel speed publisher",
-            ),
-            DeclareLaunchArgument(
-                "rear_wheel_speed",
-                default_value="5.0",
-                description="Rear wheel angular speed (rad/s) for demo publisher",
-            ),
-            DeclareLaunchArgument(
-                "steering_angle",
-                default_value="0.0",
-                description="Steering angle (rad) for demo publisher",
-            ),
-            DeclareLaunchArgument(
-                "rear_wheel_publish_rate",
-                default_value="20.0",
-                description="Publish rate (Hz) for demo publisher",
-            ),
-            DeclareLaunchArgument(
                 "control_publish_rate",
                 default_value="30.0",
                 description="Publish rate (Hz) for control bridge",
@@ -245,14 +222,19 @@ def generate_launch_description():
                 default_value="true",
                 description="Launch GazeboLidarReader to publish /lidar_processed",
             ),
+            DeclareLaunchArgument(
+                "control_node",
+                default_value="true",
+                description="Launch voiture_control_node",
+            ),
             gz_sim,
             joint_state_publisher,
             robot_state_publisher,
             spawn_delayed,
             rviz_node,
             rear_wheel_bridge_node,
-            rear_wheel_publisher_node,
             lidar_bridge_node,
             lidar_reader_node,
+            control_node,
         ]
     )

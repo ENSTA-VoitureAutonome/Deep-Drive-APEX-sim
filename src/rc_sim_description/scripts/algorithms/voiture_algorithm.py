@@ -2,15 +2,64 @@ import time
 import cv2
 import os
 import datetime
-from algorithm.interfaces import *
-from algorithm.constants import HITBOX_H1, HITBOX_H2, HITBOX_W
-from algorithm.control_camera import extract_info, DetectionStatus
-from algorithm.control_direction import compute_steer_from_lidar, shrink_space
-from algorithm.control_speed import compute_speed
+import numpy as np
+try:
+    from algorithm.interfaces import *  # type: ignore  # noqa: F403
+except Exception:
+    from interfaces import *  # type: ignore  # noqa: F403
+try:
+    from algorithm.constants import HITBOX_H1, HITBOX_H2, HITBOX_W  # type: ignore
+except Exception:
+    from constants import HITBOX_H1, HITBOX_H2, HITBOX_W  # type: ignore
+try:
+    from algorithm.control_camera import extract_info, DetectionStatus  # type: ignore
+except Exception:
+    from control_camera import extract_info, DetectionStatus  # type: ignore
+try:
+    from algorithm.control_direction import compute_steer_from_lidar, shrink_space  # type: ignore
+except Exception:
+    from control_direction import compute_steer_from_lidar, shrink_space  # type: ignore
+try:
+    from algorithm.control_speed import compute_speed  # type: ignore
+except Exception:
+    from control_speed import compute_speed  # type: ignore
 
 back_dist = 15
 
 import logging
+
+
+class VoitureAlgorithmCore:
+    def __init__(self, logger: logging.Logger | None = None):
+        self.logger = logger or logging.getLogger(__name__)
+
+    def compute(
+        self,
+        lidar_360: np.ndarray,
+        measured_wheelspeed: float | None = None,
+    ) -> tuple[float, float]:
+        if lidar_360 is None:
+            self.logger.warning("LiDAR data is None; returning zero commands.")
+            return 0.0, 0.0
+
+        lidar = np.asarray(lidar_360, dtype=float).reshape(-1)
+        if lidar.shape[0] != 360:
+            self.logger.error(
+                f"Expected LiDAR length 360, got {lidar.shape[0]}; returning zero commands."
+            )
+            return 0.0, 0.0
+
+        invalid_mask = ~np.isfinite(lidar) | (lidar <= 0.0)
+        if np.any(invalid_mask):
+            lidar = lidar.copy()
+            lidar[invalid_mask] = 0.0
+
+        shrinked = shrink_space(lidar)
+        steer, target_angle = compute_steer_from_lidar(shrinked)
+        target_speed = compute_speed(shrinked, target_angle)
+
+        _ = measured_wheelspeed
+        return float(steer), float(target_speed)
 
 
 
@@ -32,7 +81,7 @@ class VoitureAlgorithm:
             self.simple_logger.error("Lidar interface FAILED")    
             raise TypeError("lidar must implement LiDarInterface")
         if not isinstance(ultrasonic, UltrasonicInterface):
-            SELF.simple_logger.error("Ultrasonic interface FAILED")
+            self.simple_logger.error("Ultrasonic interface FAILED")
             raise TypeError("ultrasonic must implement UltrasonicInterface")
         if not isinstance(speed, SpeedInterface):
             self.simple_logger.error("Speed interface FAILED")

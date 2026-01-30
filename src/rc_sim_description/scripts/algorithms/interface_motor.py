@@ -1,7 +1,47 @@
-from algorithm.interfaces import MotorInterface
-from algorithm.constants import ESC_DC_MIN, ESC_DC_MAX
-from raspberry_pwm import PWM
-import algorithm.voiture_logger as voiture_logger
+try:
+    from algorithm.interfaces import MotorInterface  # type: ignore
+except Exception:
+    from interfaces import MotorInterface  # type: ignore
+try:
+    from algorithm.constants import ESC_DC_MIN, ESC_DC_MAX  # type: ignore
+except Exception:
+    from constants import ESC_DC_MIN, ESC_DC_MAX  # type: ignore
+try:
+    from raspberry_pwm import PWM  # type: ignore
+except Exception:
+    class PWM:  # Fallback for sim without hardware PWM
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self, *_args, **_kwargs):
+            pass
+
+        def set_duty_cycle(self, *_args, **_kwargs):
+            pass
+
+        def stop(self, *_args, **_kwargs):
+            pass
+try:
+    import algorithm.voiture_logger as voiture_logger  # type: ignore
+except Exception:
+    try:
+        import voiture_logger as voiture_logger  # type: ignore
+    except Exception:
+        class _DummyLogger:
+            def info(self, *_args, **_kwargs):
+                pass
+
+            def debug(self, *_args, **_kwargs):
+                pass
+
+        class _DummyCentralLogger:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def get_logger(self):
+                return _DummyLogger()
+
+        voiture_logger = type('voiture_logger', (), {'CentralLogger': _DummyCentralLogger})
 import time
 
 NEUTRAL_DC = (ESC_DC_MIN + ESC_DC_MAX)/2
@@ -85,6 +125,60 @@ class RealMotorInterface(MotorInterface):
         """Direct control of PWM duty cycle for debugging or manual control"""
         self._pwm.set_duty_cycle(duty_cycle)
         self.logger.debug(f"Duty cycle directly set to {duty_cycle}%")
+
+
+class RearWheelSpeedBridgeCore:
+    def __init__(
+        self,
+        rear_left_cmd_topic: str,
+        rear_right_cmd_topic: str,
+        front_left_cmd_topic: str | None = None,
+        front_right_cmd_topic: str | None = None,
+    ):
+        from gz.transport13 import Node as GzNode  # local import for sim-only dep
+        from gz.msgs10 import double_pb2
+
+        self._double_pb2 = double_pb2
+        self._gz_node = GzNode()
+        self._rear_left_pub = self._gz_node.advertise(
+            rear_left_cmd_topic, double_pb2.Double
+        )
+        self._rear_right_pub = self._gz_node.advertise(
+            rear_right_cmd_topic, double_pb2.Double
+        )
+        self._front_left_pub = None
+        self._front_right_pub = None
+        if front_left_cmd_topic and front_right_cmd_topic:
+            self._front_left_pub = self._gz_node.advertise(
+                front_left_cmd_topic, double_pb2.Double
+            )
+            self._front_right_pub = self._gz_node.advertise(
+                front_right_cmd_topic, double_pb2.Double
+            )
+
+    def publish_speed(self, speed: float) -> None:
+        msg = self._double_pb2.Double()
+        msg.data = speed
+        self._rear_left_pub.publish(msg)
+        self._rear_right_pub.publish(msg)
+
+    def publish_left_right(self, left_speed: float, right_speed: float) -> None:
+        left_msg = self._double_pb2.Double()
+        left_msg.data = left_speed
+        right_msg = self._double_pb2.Double()
+        right_msg.data = right_speed
+        self._rear_left_pub.publish(left_msg)
+        self._rear_right_pub.publish(right_msg)
+
+    def publish_front_steer(self, left_angle: float, right_angle: float) -> None:
+        if self._front_left_pub is None or self._front_right_pub is None:
+            return
+        left_msg = self._double_pb2.Double()
+        left_msg.data = left_angle
+        right_msg = self._double_pb2.Double()
+        right_msg.data = right_angle
+        self._front_left_pub.publish(left_msg)
+        self._front_right_pub.publish(right_msg)
 
 if __name__ == "__main__":
     test_sequence = [

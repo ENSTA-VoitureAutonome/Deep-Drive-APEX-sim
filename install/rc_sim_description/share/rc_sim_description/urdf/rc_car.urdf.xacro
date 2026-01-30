@@ -59,7 +59,7 @@
       <parent link="${parent}"/>
       <child link="${name}"/>
       <origin xyz="${xyz}" rpy="1.5708 0 0"/>
-      <axis xyz="0 0 1"/>
+      <axis xyz="0 0 -1"/>
     </joint>
     <gazebo reference="${name}">
       <mu1>1.2</mu1>
