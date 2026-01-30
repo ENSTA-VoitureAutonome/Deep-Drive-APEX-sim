@@ -73,7 +73,7 @@ def generate_launch_description():
         parameters=[
             {'mode': 'sim'},
             {'lidar_topic': '/scan'},
-            {'publish_rate_hz': 20.0},
+            {'publish_rate_hz': 60.0},
             {'wheel_radius_m': 0.06},
             {'steer_deg_to_rad': True},
         ],
@@ -89,7 +89,7 @@ def generate_launch_description():
             {'front_steer_joints': ['front_left_wheel_steer_joint', 'front_right_wheel_steer_joint']},
             {'rear_controller_topic': '/rear_wheels_velocity_controller/commands'},
             {'front_controller_topic': '/front_steer_position_controller/commands'},
-            {'publish_rate_hz': 50.0},
+            {'publish_rate_hz': 60.0},
         ],
         output='screen',
     )

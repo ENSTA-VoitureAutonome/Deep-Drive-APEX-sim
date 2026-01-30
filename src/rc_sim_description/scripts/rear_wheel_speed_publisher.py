@@ -10,7 +10,7 @@ class RearWheelSpeedPublisher(Node):
         super().__init__("rear_wheel_speed_publisher")
         self.declare_parameter("speed", 5.0)
         self.declare_parameter("steering_angle", 0.0)
-        self.declare_parameter("publish_rate", 20.0)
+        self.declare_parameter("publish_rate", 60.0)
         self._speed_topic = "/rear_wheel_speed"
         self._steering_topic = "/steering_angle"
 
