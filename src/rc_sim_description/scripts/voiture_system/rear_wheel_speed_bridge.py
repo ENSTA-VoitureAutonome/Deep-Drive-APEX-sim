@@ -146,6 +146,10 @@ class RearWheelSpeedBridge(Node):
         omega_rl, omega_rr = self._rear_wheel_omegas(v, delta)
         self._bridge.publish_left_right(omega_rl, omega_rr)
         left_delta, right_delta = self._ackermann_angles(delta)
+        if self._steering_limit > 0.0:
+            limit = abs(self._steering_limit)
+            left_delta = max(-limit, min(left_delta, limit))
+            right_delta = max(-limit, min(right_delta, limit))
         self._bridge.publish_front_steer(left_delta, right_delta)
 
     def _to_rad_per_sec(self, linear_speed_m_s: float) -> float:

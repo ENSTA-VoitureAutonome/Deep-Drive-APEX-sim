@@ -102,6 +102,9 @@ def generate_launch_description():
         parameters=[
             {
                 "publish_rate": control_publish_rate,
+                "wheel_base": wheel_base,
+                "track_width": track_width,
+                "steering_limit": steering_limit,
             }
         ],
         condition=IfCondition(rear_wheel_bridge),
@@ -144,7 +147,7 @@ def generate_launch_description():
                 "measured_wheelspeed_topic": "/measured_wheelspeed",
                 "rear_wheel_speed_topic": "/rear_wheel_speed",
                 "steering_angle_topic": "/steering_angle",
-                "control_rate_hz": 30.0,
+                "control_rate_hz": 60.0,
             }
         ],
         condition=IfCondition(control_node),
@@ -194,7 +197,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "control_publish_rate",
-                default_value="30.0",
+                default_value="60.0",
                 description="Publish rate (Hz) for control bridge",
             ),
             DeclareLaunchArgument(
@@ -209,8 +212,8 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "steering_limit",
-                default_value="0.6",
-                description="Max steering angle (rad)",
+                default_value="0.5235987756",
+                description="Max steering angle (rad, 30 deg)",
             ),
             DeclareLaunchArgument(
                 "lidar_bridge",

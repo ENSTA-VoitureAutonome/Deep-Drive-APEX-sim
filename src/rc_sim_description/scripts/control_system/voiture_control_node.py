@@ -50,6 +50,10 @@ class VoitureControlNode(Node):
         self.declare_parameter("steering_angle_topic", "/steering_angle")
         self.declare_parameter("control_rate_hz", 30.0)
         self.declare_parameter("lidar_type", "auto")
+        self.declare_parameter("steering_limit_deg", 30.0)
+        self.declare_parameter("steering_rate_limit_deg_s", 180.0)
+        self.declare_parameter("steering_scale", 1.0)
+        self.declare_parameter("steering_output_in_radians", True)
 
         self._lidar_topic = self.get_parameter("lidar_topic").value
         self._measured_topic = self.get_parameter("measured_wheelspeed_topic").value
@@ -57,6 +61,16 @@ class VoitureControlNode(Node):
         self._steering_topic = self.get_parameter("steering_angle_topic").value
         self._control_rate_hz = float(self.get_parameter("control_rate_hz").value)
         self._lidar_type = str(self.get_parameter("lidar_type").value).lower()
+        self._steering_limit_deg = float(
+            self.get_parameter("steering_limit_deg").value
+        )
+        self._steering_rate_limit_deg_s = float(
+            self.get_parameter("steering_rate_limit_deg_s").value
+        )
+        self._steering_scale = float(self.get_parameter("steering_scale").value)
+        self._steering_output_in_radians = bool(
+            self.get_parameter("steering_output_in_radians").value
+        )
 
         self._core = VoitureAlgorithmCore(self.get_logger())
         self._latest_lidar: Optional[np.ndarray] = None
@@ -71,6 +85,8 @@ class VoitureControlNode(Node):
         )
 
         period = 1.0 / self._control_rate_hz if self._control_rate_hz > 0 else 0.033
+        self._control_period = period
+        self._prev_steer_cmd = 0.0
         self._timer = self.create_timer(period, self._on_timer)
 
     def _create_lidar_subscription(self):
@@ -118,13 +134,35 @@ class VoitureControlNode(Node):
         steer_cmd, speed_cmd = self._core.compute(
             self._latest_lidar, self._latest_wheelspeed
         )
+        steer_cmd = self._limit_steer_deg(steer_cmd)
         steer_msg = Float64()
-        steer_msg.data = float(steer_cmd)
+        if self._steering_output_in_radians:
+            steer_msg.data = math.radians(float(steer_cmd))
+        else:
+            steer_msg.data = float(steer_cmd)
         speed_msg = Float64()
         speed_msg.data = float(speed_cmd)
-        # Published steering uses the same unit as compute_steer_from_lidar (degrees).
+        # Published steering defaults to radians for the sim bridge.
         self._steering_pub.publish(steer_msg)
         self._rear_speed_pub.publish(speed_msg)
+
+    def _limit_steer_deg(self, steer_cmd: float) -> float:
+        steer = float(steer_cmd) * self._steering_scale
+        limit = abs(self._steering_limit_deg)
+        if limit > 0.0:
+            steer = max(-limit, min(steer, limit))
+
+        rate = abs(self._steering_rate_limit_deg_s)
+        if rate > 0.0 and self._control_period > 0.0:
+            max_delta = rate * self._control_period
+            delta = steer - self._prev_steer_cmd
+            if delta > max_delta:
+                steer = self._prev_steer_cmd + max_delta
+            elif delta < -max_delta:
+                steer = self._prev_steer_cmd - max_delta
+
+        self._prev_steer_cmd = steer
+        return steer
 
     @staticmethod
     def _sanitize_ranges(values: np.ndarray) -> np.ndarray:
