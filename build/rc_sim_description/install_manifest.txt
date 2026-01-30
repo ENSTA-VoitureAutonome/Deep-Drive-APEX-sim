@@ -3,3 +3,15 @@
 /home/santiago/AiAtonomousRc/install/rc_sim_description/share/rc_sim_description/worlds/basic_track.world
 /home/santiago/AiAtonomousRc/install/rc_sim_description/share/rc_sim_description/worlds/flat_track.world
 /home/santiago/AiAtonomousRc/install/rc_sim_description/share/rc_sim_description/config/rviz/rc_car.rviz
+/home/santiago/AiAtonomousRc/install/rc_sim_description/lib/rc_sim_description/algorithms/voiture_logger.py
+/home/santiago/AiAtonomousRc/install/rc_sim_description/lib/rc_sim_description/algorithms/control_speed.py
+/home/santiago/AiAtonomousRc/install/rc_sim_description/lib/rc_sim_description/algorithms/test_sim_lidar_reader.py
+/home/santiago/AiAtonomousRc/install/rc_sim_description/lib/rc_sim_description/algorithms/interface_motor.py
+/home/santiago/AiAtonomousRc/install/rc_sim_description/lib/rc_sim_description/algorithms/interface_steer.py
+/home/santiago/AiAtonomousRc/install/rc_sim_description/lib/rc_sim_description/algorithms/control_camera.py
+/home/santiago/AiAtonomousRc/install/rc_sim_description/lib/rc_sim_description/algorithms/sim_lidar_reader.py
+/home/santiago/AiAtonomousRc/install/rc_sim_description/lib/rc_sim_description/algorithms/control_direction.py
+/home/santiago/AiAtonomousRc/install/rc_sim_description/lib/rc_sim_description/algorithms/interfaces.py
+/home/santiago/AiAtonomousRc/install/rc_sim_description/lib/rc_sim_description/algorithms/voiture_algorithm.py
+/home/santiago/AiAtonomousRc/install/rc_sim_description/lib/rc_sim_description/algorithms/interface_lidar.py
+/home/santiago/AiAtonomousRc/install/rc_sim_description/lib/rc_sim_description/algorithms/constants.py

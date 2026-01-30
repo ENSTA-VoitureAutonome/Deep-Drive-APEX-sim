@@ -56,6 +56,10 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
     FILES_MATCHING REGEX "/[^/]*\\.launch\\.py$" REGEX "/[^/]*\\.xacro$" REGEX "/[^/]*\\.rviz$" REGEX "/[^/]*\\.world$" REGEX "/[^/]*\\.stl$" REGEX "/[^/]*\\.dae$" REGEX "/[^/]*\\.obj$")
 endif()
 
+if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/rc_sim_description/algorithms" TYPE DIRECTORY FILES "/home/santiago/AiAtonomousRc/src/rc_sim_description/scripts/algorithms/" FILES_MATCHING REGEX "/[^/]*\\.py$")
+endif()
+
 if(CMAKE_INSTALL_COMPONENT)
   set(CMAKE_INSTALL_MANIFEST "install_manifest_${CMAKE_INSTALL_COMPONENT}.txt")
 else()

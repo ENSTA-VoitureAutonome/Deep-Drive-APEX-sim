@@ -26,10 +26,21 @@ install(
 
 install(
   PROGRAMS
-    scripts/rear_wheel_speed_bridge.py
     scripts/rear_wheel_speed_publisher.py
     scripts/turning_command_mapper.py
+    scripts/control_system/voiture_control_node.py
+    scripts/voiture_system/rear_wheel_speed_bridge.py
+    scripts/voiture_system/gazebo_lidar_reader_node.py
+    scripts/algorithms/sim_lidar_reader.py
+    scripts/algorithms/test_sim_lidar_reader.py
   DESTINATION lib/${PROJECT_NAME}
+)
+
+install(
+  DIRECTORY scripts/algorithms/
+  DESTINATION lib/${PROJECT_NAME}/algorithms
+  FILES_MATCHING
+    PATTERN "*.py"
 )
 
 if(BUILD_TESTING)
