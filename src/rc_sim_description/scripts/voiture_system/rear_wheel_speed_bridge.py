@@ -48,8 +48,10 @@ class RearWheelSpeedBridge(Node):
         self.declare_parameter("wheel_diameter", 0.065)
         self.declare_parameter("wheel_base", 0.32)
         self.declare_parameter("track_width", 0.29)
-        self.declare_parameter("steering_limit", 0.5235987756)
-        self.declare_parameter("publish_rate", 60.0)
+        self.declare_parameter("steering_limit", 0.6)
+        self.declare_parameter("lp_enable", False)
+        self.declare_parameter("lp_alpha", 0.2)
+        self.declare_parameter("publish_rate", 30.0)
 
         speed_topic = (
             self.get_parameter("rear_wheel_speed_topic")
@@ -93,6 +95,8 @@ class RearWheelSpeedBridge(Node):
         self._steering_limit = (
             self.get_parameter("steering_limit").get_parameter_value().double_value
         )
+        self._lp_enable = bool(self.get_parameter("lp_enable").value)
+        self._lp_alpha = float(self.get_parameter("lp_alpha").value)
         self._publish_rate = (
             self.get_parameter("publish_rate").get_parameter_value().double_value
         )
@@ -106,6 +110,7 @@ class RearWheelSpeedBridge(Node):
 
         self._last_speed = None
         self._last_delta = 0.0
+        self._prev_delta = None
         self.create_subscription(Float64, speed_topic, self._on_speed, 10)
         self.create_subscription(Float64, steering_topic, self._on_steering, 10)
 
@@ -136,6 +141,8 @@ class RearWheelSpeedBridge(Node):
         if self._steering_limit > 0.0:
             limit = abs(self._steering_limit)
             delta = max(-limit, min(delta, limit))
+        if self._lp_enable:
+            delta = self._low_pass_delta(delta)
         omega_rl, omega_rr = self._rear_wheel_omegas(v, delta)
         self._bridge.publish_left_right(omega_rl, omega_rr)
         left_delta, right_delta = self._ackermann_angles(delta)
@@ -177,6 +184,15 @@ class RearWheelSpeedBridge(Node):
         left = math.atan(self._wheel_base / inner)
         right = math.atan(self._wheel_base / outer)
         return left, right
+
+    def _low_pass_delta(self, delta: float) -> float:
+        alpha = max(0.0, min(self._lp_alpha, 1.0))
+        if self._prev_delta is None:
+            self._prev_delta = delta
+            return delta
+        filtered = self._prev_delta + alpha * (delta - self._prev_delta)
+        self._prev_delta = filtered
+        return filtered
 
     @staticmethod
     def _avoid_zero(value: float, sign_hint: float) -> float:
