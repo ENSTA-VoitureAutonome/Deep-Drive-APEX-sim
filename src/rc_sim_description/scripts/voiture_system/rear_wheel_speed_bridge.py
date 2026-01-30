@@ -48,8 +48,8 @@ class RearWheelSpeedBridge(Node):
         self.declare_parameter("wheel_diameter", 0.065)
         self.declare_parameter("wheel_base", 0.32)
         self.declare_parameter("track_width", 0.29)
-        self.declare_parameter("steering_limit", 0.6)
-        self.declare_parameter("publish_rate", 30.0)
+        self.declare_parameter("steering_limit", 0.5235987756)
+        self.declare_parameter("publish_rate", 60.0)
 
         speed_topic = (
             self.get_parameter("rear_wheel_speed_topic")
@@ -139,6 +139,10 @@ class RearWheelSpeedBridge(Node):
         omega_rl, omega_rr = self._rear_wheel_omegas(v, delta)
         self._bridge.publish_left_right(omega_rl, omega_rr)
         left_delta, right_delta = self._ackermann_angles(delta)
+        if self._steering_limit > 0.0:
+            limit = abs(self._steering_limit)
+            left_delta = max(-limit, min(left_delta, limit))
+            right_delta = max(-limit, min(right_delta, limit))
         self._bridge.publish_front_steer(left_delta, right_delta)
 
     def _to_rad_per_sec(self, linear_speed_m_s: float) -> float:
