@@ -1,7 +1,10 @@
 # ROS 2 / colcon
 build/
+/build
 install/
+/install
 log/
+/log
 *.log
 
 # ROS / Gazebo runtime
