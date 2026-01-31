@@ -67,7 +67,7 @@ This package uses ROS <-> Gazebo bridges plus control nodes:
 - `rear_wheel_speed_publisher.py`: demo publisher for `/rear_wheel_speed` and `/steering_angle`.
 
 ### Example (2 terminals)
-Terminal 1 (simulación completa):
+Terminal 1 (full sim):
 ```
 source /opt/ros/jazzy/setup.bash
 cd ~/AiAtonomousRc
@@ -76,7 +76,7 @@ source install/setup.bash
 ros2 launch rc_sim_description spawn_rc_car.launch.py
 ```
 
-Terminal 2 (ver la imagen de la cámara):
+Terminal 2 (camera image):
 ```
 ros2 run image_tools showimage --ros-args -r image:=/camera/image_raw
 ```
