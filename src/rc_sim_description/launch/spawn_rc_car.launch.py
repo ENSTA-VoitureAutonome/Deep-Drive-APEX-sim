@@ -34,6 +34,7 @@ def generate_launch_description():
     lidar_bridge = LaunchConfiguration("lidar_bridge")
     lidar_reader = LaunchConfiguration("lidar_reader")
     control_node = LaunchConfiguration("control_node")
+    camera_bridge = LaunchConfiguration("camera_bridge")
 
     # Command expects a space between executable and path
     robot_description = Command(["xacro ", robot_xacro])
@@ -136,6 +137,19 @@ def generate_launch_description():
         condition=IfCondition(lidar_reader),
     )
 
+    camera_bridge_node = Node(
+        package="ros_gz_bridge",
+        executable="parameter_bridge",
+        name="camera_bridge",
+        output="screen",
+        arguments=[
+            "/camera/image_raw@sensor_msgs/msg/Image@gz.msgs.Image",
+            "/camera/camera_info@sensor_msgs/msg/CameraInfo@gz.msgs.CameraInfo",
+        ],
+        parameters=[{"use_sim_time": use_sim_time}],
+        condition=IfCondition(camera_bridge),
+    )
+
     control_node = Node(
         package="rc_sim_description",
         executable="voiture_control_node.py",
@@ -230,6 +244,11 @@ def generate_launch_description():
                 default_value="true",
                 description="Launch voiture_control_node",
             ),
+            DeclareLaunchArgument(
+                "camera_bridge",
+                default_value="true",
+                description="Launch ros_gz_bridge for camera topics",
+            ),
             gz_sim,
             joint_state_publisher,
             robot_state_publisher,
@@ -238,6 +257,7 @@ def generate_launch_description():
             rear_wheel_bridge_node,
             lidar_bridge_node,
             lidar_reader_node,
+            camera_bridge_node,
             control_node,
         ]
     )
