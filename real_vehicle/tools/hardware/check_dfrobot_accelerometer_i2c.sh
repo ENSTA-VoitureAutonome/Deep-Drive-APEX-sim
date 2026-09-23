@@ -19,7 +19,7 @@ fi
 
 if command -v docker >/dev/null 2>&1 && docker ps --format '{{.Names}}' | grep -qx "${CONTAINER}"; then
   exec docker exec "${TTY_ARGS[@]}" "${CONTAINER}" \
-    python3 /work/repo/APEX/tools/hardware/check_dfrobot_accelerometer_i2c.py \
+    python3 /work/repo/real_vehicle/tools/hardware/check_dfrobot_accelerometer_i2c.py \
     "${BUS_ARGS[@]}" "$@"
 fi
 

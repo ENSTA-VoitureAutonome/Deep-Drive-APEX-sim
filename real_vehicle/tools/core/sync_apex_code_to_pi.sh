@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APEX_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-REMOTE_TARGET="${1:-ensta@raspberrypi:/home/ensta/AiAtonomousRc/APEX/}"
+REMOTE_TARGET="${1:-ensta@raspberrypi:/home/ensta/AiAtonomousRc/real_vehicle/}"
 
 shift || true
 

@@ -3,8 +3,8 @@ set -euo pipefail
 
 REMOTE_HOST="${1:-ensta@raspberrypi}"
 RUN_ID="${2:-latest}"
-REMOTE_ROOT="${3:-/home/ensta/AiAtonomousRc/APEX/ros2_ws/apex_recognition_tour}"
-LOCAL_ROOT="${4:-$(pwd)/APEX/data/apex_recognition_tour}"
+REMOTE_ROOT="${3:-/home/ensta/AiAtonomousRc/real_vehicle/ros2_ws/apex_recognition_tour}"
+LOCAL_ROOT="${4:-$(pwd)/real_vehicle/data/apex_recognition_tour}"
 ANALYSIS_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)/analysis/plot_recognition_tour_run.py"
 FETCH_LIDAR_POINTS="${APEX_FETCH_LIDAR_POINTS:-0}"
 

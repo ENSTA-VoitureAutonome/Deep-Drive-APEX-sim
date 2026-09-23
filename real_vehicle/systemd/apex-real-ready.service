@@ -7,7 +7,7 @@ Requires=docker.service
 Type=simple
 User=ensta
 Group=ensta
-WorkingDirectory=/home/ensta/AiAtonomousRc/APEX
+WorkingDirectory=/home/ensta/AiAtonomousRc/real_vehicle
 Environment=HOME=/home/ensta
 ExecStart=/bin/bash -lc './tools/core/apex_real_ready_service_runner.sh'
 ExecStop=/bin/bash -lc './tools/core/apex_core_down.sh'

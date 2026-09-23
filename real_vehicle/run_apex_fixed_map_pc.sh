@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-APEX_SIM_ROOT="${APEX_SIM_ROOT:-$(cd "${SCRIPT_DIR}/../APEXsim" && pwd)}"
+APEX_SIM_ROOT="${APEX_SIM_ROOT:-$(cd "${SCRIPT_DIR}/../simulation" && pwd)}"
 LOCAL_ROOT="${APEX_LOCAL_RECOGNITION_ROOT:-${SCRIPT_DIR}/data/apex_recognition_tour}"
 RUN_ID="${1:-latest}"
 RVIZ_CONFIG="${SCRIPT_DIR}/rviz/apex_manual_mapping_offline.rviz"
