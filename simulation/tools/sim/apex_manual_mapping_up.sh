@@ -142,11 +142,11 @@ echo "[APEX] Abre este .exe en Windows:"
 echo "  ${WINDOWS_EXE_PATH}"
 if [[ ! -f "${WINDOWS_EXE_PATH}" ]]; then
   echo "[APEX][WARN] El .exe todavía no existe. Genéralo con:"
-  echo "  ./APEXsim/tools/windows/build_apex_xbox_bridge_sim.sh"
+  echo "  ./simulation/tools/windows/build_apex_xbox_bridge_sim.sh"
 fi
 if [[ -n "${WSL_DISTRO_NAME:-}" ]]; then
   echo "[APEX] Ruta Windows equivalente:"
-  echo "  \\\\wsl$\\${WSL_DISTRO_NAME}\\home\\santiago\\AiAtonomousRc\\APEXsim\\tools\\windows\\dist\\apex_xbox_bridge_sim.exe"
+  echo "  \\\\wsl$\\${WSL_DISTRO_NAME}\\home\\santiago\\AiAtonomousRc\\simulation\\tools\\windows\\dist\\apex_xbox_bridge_sim.exe"
 fi
 
 (
