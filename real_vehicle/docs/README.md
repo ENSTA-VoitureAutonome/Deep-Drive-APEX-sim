@@ -1,6 +1,6 @@
 # APEX Curve-Tracking Documentation
 
-This folder documents the current curve-entry stack implemented in `APEX/ros2_ws/src/apex_telemetry/apex_telemetry`.
+This folder documents the current curve-entry stack implemented in `real_vehicle/ros2_ws/src/apex_telemetry/apex_telemetry`.
 
 The goal of this documentation is to explain the code as a set of cooperating modules, not as isolated files. Each document describes:
 

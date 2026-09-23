@@ -10,14 +10,14 @@ If you need the detailed explanation, use:
 
 ```bash
 cd /home/santiago/AiAtonomousRc
-rsync -av APEX/ros2_ws/ ensta@raspberrypi:/home/ensta/AiAtonomousRc/APEX/ros2_ws/
+rsync -av real_vehicle/ros2_ws/ ensta@raspberrypi:/home/ensta/AiAtonomousRc/real_vehicle/ros2_ws/
 ```
 
 ## Raspberry Pi Terminal 1
 
 ```bash
 ssh ensta@raspberrypi
-cd /home/ensta/AiAtonomousRc/APEX
+cd /home/ensta/AiAtonomousRc/real_vehicle
 export PATH="$HOME/local/bin:$PATH"
 ./tools/core/apex_core_down.sh
 APEX_SKIP_BUILD=1 ./tools/capture/apex_curve_track_capture.sh --run-id curve_track_hard_stop_01 --timeout-s 22.0
@@ -48,21 +48,21 @@ docker exec apex_pipeline /bin/bash -lc "source /opt/ros/jazzy/setup.bash && ros
 
 ```bash
 cd /home/santiago/AiAtonomousRc
-./APEX/tools/capture/fetch_curve_track_capture.sh \
+./real_vehicle/tools/capture/fetch_curve_track_capture.sh \
   ensta@raspberrypi \
   latest \
-  /home/ensta/AiAtonomousRc/APEX/ros2_ws/apex_curve_track \
-  "$(pwd)/APEX/data/apex_curve_track"
+  /home/ensta/AiAtonomousRc/real_vehicle/ros2_ws/apex_curve_track \
+  "$(pwd)/real_vehicle/data/apex_curve_track"
 ```
 
 ## PC Terminal 2
 
 ```bash
 cd /home/santiago/AiAtonomousRc
-RUN_ID=$(ls -1dt ./APEX/data/apex_curve_track/curve_track_hard_stop_01_* | head -n 1 | xargs -r basename)
-python3 ./APEX/tools/analysis/plot_curve_tracking_run.py --run-dir "./APEX/data/apex_curve_track/$RUN_ID"
-xdg-open "./APEX/data/apex_curve_track/$RUN_ID/analysis_curve_tracking/curve_tracking_overview.png"
-cat "./APEX/data/apex_curve_track/$RUN_ID/analysis_curve_tracking/tracking_summary.json"
+RUN_ID=$(ls -1dt ./real_vehicle/data/apex_curve_track/curve_track_hard_stop_01_* | head -n 1 | xargs -r basename)
+python3 ./real_vehicle/tools/analysis/plot_curve_tracking_run.py --run-dir "./real_vehicle/data/apex_curve_track/$RUN_ID"
+xdg-open "./real_vehicle/data/apex_curve_track/$RUN_ID/analysis_curve_tracking/curve_tracking_overview.png"
+cat "./real_vehicle/data/apex_curve_track/$RUN_ID/analysis_curve_tracking/tracking_summary.json"
 ```
 
 ## Important Note
