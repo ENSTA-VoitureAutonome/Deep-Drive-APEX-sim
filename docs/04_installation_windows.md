@@ -2,110 +2,72 @@
 
 ## Support Level
 
-Native Windows support is incomplete for this repository. The current codebase is a ROS 2 and Gazebo-oriented Linux project, and several important workflows depend on Linux-only interfaces:
+The recommended path is Windows 11 with WSL2, Ubuntu 24.04, and WSLg. ROS 2 and Gazebo run inside WSL. Native PowerShell is used only for utilities such as the gamepad bridge.
 
-- Gazebo Sim and ROS 2 Jazzy launch workflows.
-- Docker Compose deployment on the Raspberry Pi.
-- Serial devices presented as Linux device files.
-- Raspberry Pi sysfs PWM under `/sys/class/pwm`.
-- Shell scripts written for Bash.
+## Prepare WSL2
 
-The recommended Windows setup is **WSL2 with Ubuntu 24.04 and ROS 2 Jazzy**.
-
-During repository audit on the current Windows host, `ros2` and `colcon` were not available in PowerShell. Build and runtime validation should therefore be performed inside Linux, WSL2, or on the Raspberry Pi.
-
-## Recommended Windows Path: WSL2
-
-Install WSL2 and Ubuntu 24.04:
+Run in an elevated PowerShell:
 
 ```powershell
 wsl --install -d Ubuntu-24.04
 ```
 
-Restart Windows if requested, then open the Ubuntu terminal.
+Inside Ubuntu, follow [Installation on Linux](03_installation_linux.md).
 
-Inside WSL2, follow [Installation on Linux](03_installation_linux.md):
+## Build the Simulation
 
 ```bash
-sudo apt update
-sudo apt install -y python3-colcon-common-extensions python3-rosdep git
+cd ~/AiAtonomousRc/simulation/ros2_ws
 source /opt/ros/jazzy/setup.bash
-cd ~/AiAtonomousRc
-rosdep install --from-paths src APEX/ros2_ws/src --ignore-src -r -y
-colcon build --symlink-install --base-paths src APEX/ros2_ws/src --packages-select rc_sim_description apex_telemetry voiture_system
+rosdep install --from-paths src --ignore-src -r -y
+colcon build --symlink-install \
+  --packages-select rc_sim_description apex_telemetry voiture_system
 source install/setup.bash
 ```
 
-## Gazebo and RViz on WSL2
-
-For GUI applications such as Gazebo and RViz:
-
-- Use Windows 11 with WSLg when possible.
-- Keep the repository inside the WSL filesystem for better performance, for example under `~/AiAtonomousRc`.
-- Avoid building from `/mnt/c/...` if performance or file watching becomes unreliable.
-
-Run a simulation from WSL2:
+Run from the repository root:
 
 ```bash
-./APEX/tools/sim/apex_sim_up.sh --scenario baseline --rviz
+./simulation/tools/sim/apex_sim_up.sh --scenario baseline --rviz
 ```
 
-## Windows Gamepad and PC-Side Tools
+WSLg should display Gazebo and RViz. If it does not, check `echo $DISPLAY`, update WSL, and avoid mixing Windows GUI packages with Ubuntu packages.
 
-The repository includes Windows/PC helper tooling under:
+## Xbox Controller from Windows
+
+Build the bridge once:
+
+```bash
+./simulation/tools/windows/build_apex_xbox_bridge_sim.sh
+```
+
+Run on Windows:
 
 ```text
-APEX/tools/windows/
-APEX/tools/pc/
+simulation/tools/windows/dist/apex_xbox_bridge_sim.exe
 ```
 
-These tools support manual control and session interaction from a PC, but the ROS 2 autonomy pipeline remains Linux-based. The PC bridge and Raspberry Pi must agree on DDS/network settings, especially:
+Then launch in WSL:
 
 ```bash
-export ROS_DOMAIN_ID=30
-export ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET
-export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+./simulation/tools/sim/apex_sim_up.sh \
+  --scenario precision_fusion \
+  --control-mode manual_windows_bridge \
+  --rviz
 ```
 
-On Windows, allow the relevant UDP traffic through the firewall. Existing LiDAR networking notes in `Lidar/README.md` mention UDP discovery ranges around 14900-15050 for the tested setup.
+Use `manual_xbox` only when Linux/WSL can see the device directly through `pygame`.
 
-## Real-Car Deployment from Windows
+## Real Vehicle from Windows
 
-The practical real-car workflow from a Windows development machine is:
+The SLAM-enabled real stack runs on the Raspberry Pi. Windows/WSL can be used to synchronize code, open SSH, build `real_vehicle/ros2_ws`, and monitor ROS. Execute the hardware launch only beside a safely restrained car.
 
-1. Use Windows or WSL2 as the editing and monitoring environment.
-2. SSH into the Raspberry Pi mounted on the blue car.
-3. Run the APEX Docker Compose scripts on the Raspberry Pi.
-4. Optionally run PC-side bridge or watch scripts for manual control and run retrieval.
+## ROS 2 Networking
 
-Example:
-
-```bash
-ssh ensta@raspberrypi
-cd /home/ensta/AiAtonomousRc/APEX
-./tools/core/apex_real_ready_up.sh
-```
-
-Adjust hostnames and paths to your installation.
-
-## Native PowerShell Caveats
-
-PowerShell is useful for inspecting files, editing documentation, and using Git. It is not the recommended runtime shell for this ROS 2 repository.
-
-Avoid trying to run these directly in native PowerShell unless you have separately installed and validated native ROS 2 tools:
-
-```powershell
-ros2 launch rc_sim_description apex_sim.launch.py
-colcon build
-./APEX/tools/sim/apex_sim_up.sh
-```
-
-Use WSL2 or Linux for those commands.
+Align `ROS_DOMAIN_ID`, DDS middleware, and firewall rules between WSL, Windows, and the Raspberry Pi. WSL mirrored networking usually improves multicast discovery.
 
 ## Related Documentation
 
-- [Installation on Linux](03_installation_linux.md)
-- [Quick Start](05_quick_start.md)
+- [Linux Installation](03_installation_linux.md)
+- [Gazebo Simulation](08_simulation_gazebo.md)
 - [Hardware Interfaces](19_hardware_interfaces.md)
-- [Troubleshooting](15_troubleshooting.md)
-

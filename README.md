@@ -1,80 +1,110 @@
 # Deep Drive APEX
 
-Deep Drive APEX is a ROS 2 and Gazebo-based autonomous RC car project. It includes a current APEX workflow for Gazebo simulation and the real blue vehicle ("voiture blue"), plus an alternate ROS 2 stack and historical references documented separately.
+Deep Drive APEX is an autonomous RC car project built with ROS 2 and Gazebo. The repository explicitly separates simulation, the SLAM-enabled physical vehicle, and historical code so each environment can evolve without mixing dependencies or commands.
 
 ## Documentation at a Glance
 
-The documentation explains the project from both user and developer perspectives: installation, quick start workflows, ROS package architecture, Gazebo simulation, real blue-car operation, launch flows, topics, parameters, data recording, hardware interfaces, troubleshooting, and known legacy areas.
+The documentation covers installation, quick starts, ROS architecture, Gazebo simulation, SLAM-enabled real-vehicle execution, interfaces, parameters, data, diagnostics, and legacy code.
 
 ## Start Here
 
 | Goal | Recommended page |
 | --- | --- |
 | Understand the project | [📘 Project Overview](docs/01_project_overview.md) |
-| Find the full documentation map | [🧭 Documentation Index](docs/00_index.md) |
+| Browse the full documentation | [🧭 Documentation Index](docs/00_index.md) |
 | Run something quickly | [🚀 Quick Start](docs/05_quick_start.md) |
-| Work with Gazebo simulation | [🕹 Gazebo Simulation](docs/08_simulation_gazebo.md) |
-| Work with the real blue car | [🚗 Blue Vehicle Real System](docs/09_blue_vehicle_real_system.md) |
-| Learn the ROS graph | [🧠 ROS Architecture](docs/07_ros_architecture.md) |
+| Continue working without the car | [🕹 Gazebo Simulation](docs/08_simulation_gazebo.md) |
+| Identify the SLAM-enabled real vehicle | [🚗 Real Vehicle System](docs/09_blue_vehicle_real_system.md) |
+| Understand nodes, topics, and packages | [🧠 ROS Architecture](docs/07_ros_architecture.md) |
+
+## Repository Separation
+
+| Directory | Responsibility | Status |
+| --- | --- | --- |
+| [`simulation/`](simulation/) | Gazebo, vehicle model, simulated sensors, control, SLAM, maps, RViz, and repeatable tests. | Recommended active development without the physical vehicle |
+| [`real_vehicle/`](real_vehicle/) | Physical vehicle. Its primary stack is `voiture_system` with `slam_toolbox`, Ackermann odometry, and hardware drivers. | Keep intact for future access to the car |
+| [`archive/`](archive/) | Legacy code, generated artifacts, and non-operational material. It includes `legacy/full_soft`, the old Python implementation without SLAM. | Historical reference only |
+| [`docs/`](docs/) | Main documentation adapted to this layout. | Source of truth for the current structure |
+
+The `simulation/` and `real_vehicle/` ROS workspaces are built separately so packages with the same names never collide in one overlay.
+
+## Simulation Quick Start
+
+```bash
+cd ~/AiAtonomousRc/simulation/ros2_ws
+source /opt/ros/jazzy/setup.bash
+colcon build --symlink-install --packages-select rc_sim_description apex_telemetry voiture_system
+source install/setup.bash
+cd ~/AiAtonomousRc
+./simulation/tools/sim/apex_sim_up.sh --scenario baseline --rviz
+```
+
+Headless smoke test:
+
+```bash
+cd ~/AiAtonomousRc/simulation/ros2_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+timeout 45s ros2 launch rc_sim_description apex_sim.launch.py \
+  scenario:=baseline rviz:=false gazebo_gui:=false
+```
+
+Available scenarios: `baseline`, `precision_fusion`, `tight_right_saturation`, `outer_long_inner_short`, `startup_pose_jump`, and `narrowing_false_corridor`.
+
+## SLAM-Enabled Real Vehicle
+
+The primary real-vehicle stack is `real_vehicle/ros2_ws/src/voiture_system`. Its entry point integrates LiDAR, serial state, Ackermann odometry, control, `slam_toolbox`, and optional Nav2:
+
+```bash
+cd ~/AiAtonomousRc/real_vehicle/ros2_ws
+source /opt/ros/jazzy/setup.bash
+colcon build --symlink-install --packages-select voiture_system
+source install/setup.bash
+ros2 launch voiture_system bringup_real_slam_nav.launch.py \
+  use_slam:=true use_nav2:=false use_rviz:=true
+```
+
+The stack remains in the repository even while the car is unavailable. Do not run this launch as a desktop test: it opens serial devices and can enable physical actuation.
+
+## Legacy Stack Without SLAM
+
+The old implementation that operates without SLAM is stored at:
+
+```text
+archive/legacy/full_soft/
+```
+
+It uses Python and direct drivers from before the current ROS 2 architecture. It is preserved for reference and selective algorithm recovery, not for new development. Auxiliary APEX tools under `real_vehicle/` can also run minimal no-SLAM captures; they must not be confused with `full_soft` or the primary `voiture_system` launch.
 
 ## Documentation Index
 
-### 📘 Overview
+- [Documentation Index](docs/00_index.md)
+- [Project Overview](docs/01_project_overview.md)
+- [Repository Structure](docs/02_repository_structure.md)
+- [Linux Installation](docs/03_installation_linux.md)
+- [Windows/WSL2 Installation](docs/04_installation_windows.md)
+- [Quick Start](docs/05_quick_start.md)
+- [System Architecture](docs/06_system_architecture.md)
+- [ROS Architecture](docs/07_ros_architecture.md)
+- [Gazebo Simulation](docs/08_simulation_gazebo.md)
+- [SLAM-Enabled Real Vehicle](docs/09_blue_vehicle_real_system.md)
+- [Packages and Modules](docs/10_packages_and_modules.md)
+- [Launch Files and Execution Flows](docs/11_launch_files_and_execution_flows.md)
+- [Topics, Services, and Parameters](docs/12_topics_services_actions_parameters.md)
+- [Data and Runs](docs/13_data_and_runs.md)
+- [Developer Guide](docs/14_developer_guide.md)
+- [Troubleshooting](docs/15_troubleshooting.md)
+- [Known Limitations and Legacy Code](docs/16_known_limitations_and_legacy_parts.md)
+- [Configuration Reference](docs/17_configuration_reference.md)
+- [Mapping and Recording](docs/18_mapping_and_recording_pipeline.md)
+- [Hardware Interfaces](docs/19_hardware_interfaces.md)
+- [ROS and Gazebo Glossary](docs/20_glossary_ros_terms.md)
 
-- [📘 Documentation Index](docs/00_index.md) - entry point for the full documentation set.
-- [🌍 Project Overview](docs/01_project_overview.md) - objectives, scope, technology stack, and current workflow.
-- [🗂 Repository Structure](docs/02_repository_structure.md) - top-level folders, ROS packages, auxiliary areas, and legacy code.
+## Workflow Summary
 
-### ⚙️ Setup
-
-- [🐧 Installation on Linux](docs/03_installation_linux.md) - Ubuntu, ROS 2 Jazzy, Gazebo, dependencies, and build steps.
-- [🪟 Installation on Windows](docs/04_installation_windows.md) - WSL2 guidance and native Windows caveats.
-- [🚀 Quick Start](docs/05_quick_start.md) - fastest build, simulation, and real-car commands.
-- [🎛 Configuration Reference](docs/17_configuration_reference.md) - important YAML, JSON, launch, and Docker configuration.
-
-### 🧠 Architecture
-
-- [🏗 System Architecture](docs/06_system_architecture.md) - high-level data flow and subsystem responsibilities.
-- [🧠 ROS Architecture](docs/07_ros_architecture.md) - packages, nodes, topics, TF, URDF/Xacro, and Gazebo bridges.
-- [📦 Packages and Modules](docs/10_packages_and_modules.md) - package-by-package responsibilities and executables.
-- [▶️ Launch Files and Execution Flows](docs/11_launch_files_and_execution_flows.md) - recommended entry points and runtime flows.
-- [🔌 Topics, Services, Actions, and Parameters](docs/12_topics_services_actions_parameters.md) - ROS interface reference.
-
-### 🕹 Simulation
-
-- [🕹 Gazebo Simulation](docs/08_simulation_gazebo.md) - Gazebo Sim worlds, vehicle model, sensors, bridges, and control flow.
-- [🗺 Mapping and Recording Pipeline](docs/18_mapping_and_recording_pipeline.md) - simulation and real capture workflows, offline refinement, and analysis.
-- [📊 Data and Runs](docs/13_data_and_runs.md) - run artifacts, logs, CSV files, maps, trajectories, and diagnostics.
-
-### 🚗 Real Vehicle
-
-- [🚗 Blue Vehicle Real System](docs/09_blue_vehicle_real_system.md) - APEX real-car workflow for the current blue vehicle.
-- [🔋 Hardware Interfaces](docs/19_hardware_interfaces.md) - IMU, LiDAR, PWM, Docker devices, networking, and gamepad bridge.
-
-### 🛠 Developer Reference
-
-- [🛠 Developer Guide](docs/14_developer_guide.md) - how to extend nodes, launch files, configuration, and documentation.
-- [🧪 Troubleshooting](docs/15_troubleshooting.md) - build, Gazebo, Docker, ROS, networking, and hardware debugging.
-- [⚠️ Known Limitations and Legacy Parts](docs/16_known_limitations_and_legacy_parts.md) - alternate stacks, older code, and cleanup recommendations.
-- [📚 ROS Glossary](docs/20_glossary_ros_terms.md) - beginner-friendly ROS and Gazebo terminology.
-
-### 📎 Reports
-
-Supplementary French report materials are stored separately from the main documentation set:
-
-- [📄 ROS Voiture Blue Synthesis](docs/reports/ros-voiture-blue/main.tex) - LaTeX synthesis of the ROS/APEX stack for the blue vehicle.
-- [📄 Simulation Architecture Report](docs/reports/simulation-architecture/main.tex) - LaTeX report on the Gazebo/APEX simulation architecture.
-- [📄 Simulation Status Report](docs/reports/simulation-status/SimulationStatus.pdf) - PDF report and LaTeX sources for the simulator status.
-- [📄 Software Selection Report](docs/reports/software-selection/SoftwareSelection.pdf) - PDF report and LaTeX sources for simulation software selection.
-- [📁 Report Folder](docs/reports/) - grouped report sources, PDFs, build artifacts, and related assets.
-
-## Current Workflow Summary
-
-| Workflow | Status | Main documentation |
+| Workflow | Current priority | Main entry point |
 | --- | --- | --- |
-| APEX Gazebo simulation | Recommended | [🕹 Gazebo Simulation](docs/08_simulation_gazebo.md) |
-| APEX real blue-car stack | Recommended | [🚗 Blue Vehicle Real System](docs/09_blue_vehicle_real_system.md) |
-| `voiture_system` SLAM/Nav2 stack | Alternate | [📦 Packages and Modules](docs/10_packages_and_modules.md) |
-| External historical Python reference and older utilities | Historical or auxiliary | [⚠️ Known Limitations and Legacy Parts](docs/16_known_limitations_and_legacy_parts.md) |
-
-For new work, start with the APEX documentation and use alternate sections only when maintaining those specific paths. The former `full_soft/` tree is no longer versioned in `main`.
+| Gazebo simulation | Recommended for continued development | `simulation/tools/sim/apex_sim_up.sh` |
+| SLAM-enabled real vehicle | Primary physical-hardware stack | `voiture_system bringup_real_slam_nav.launch.py` |
+| Real APEX capture tools | Auxiliary | `real_vehicle/tools/` |
+| Python `full_soft` without SLAM | Legacy | `archive/legacy/full_soft/` |

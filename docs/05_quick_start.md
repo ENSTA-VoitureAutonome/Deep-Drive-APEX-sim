@@ -1,133 +1,110 @@
 # Quick Start
 
-This page gives the shortest practical path to run the repository. For full setup details, read [Installation on Linux](03_installation_linux.md) or [Installation on Windows](04_installation_windows.md).
+This page gives the shortest path for each environment without mixing them.
 
-## Build Once
-
-From a Linux, WSL2, or Raspberry Pi shell with ROS 2 Jazzy installed:
+## Build the Simulation Once
 
 ```bash
-cd ~/AiAtonomousRc
+cd ~/AiAtonomousRc/simulation/ros2_ws
 source /opt/ros/jazzy/setup.bash
-rosdep install --from-paths src APEX/ros2_ws/src --ignore-src -r -y
-colcon build --symlink-install --base-paths src APEX/ros2_ws/src --packages-select rc_sim_description apex_telemetry voiture_system
+rosdep install --from-paths src --ignore-src -r -y
+colcon build --symlink-install \
+  --packages-select rc_sim_description apex_telemetry voiture_system
 source install/setup.bash
 ```
 
-Use your actual clone path instead of `~/AiAtonomousRc`.
-
 ## Start the Recommended Simulation
 
-Run the APEX Gazebo Sim wrapper:
-
 ```bash
-./APEX/tools/sim/apex_sim_up.sh --scenario baseline --rviz
+cd ~/AiAtonomousRc
+./simulation/tools/sim/apex_sim_up.sh --scenario baseline --rviz --skip-build
 ```
 
 Expected result:
 
-- Gazebo Sim starts with the selected track world.
-- RViz starts if `--rviz` is passed.
-- The simulated vehicle model is spawned.
-- The APEX pipeline runs in simulation backend mode.
-- Simulated LiDAR and IMU data appear on ROS topics.
+- Gazebo loads the selected track.
+- The vehicle model is spawned.
+- Bridges publish LiDAR, IMU, and state.
+- The control pipeline uses simulated backends.
+- RViz displays maps, trajectory, and estimation.
 
-Check topics:
+Checks:
 
 ```bash
-ros2 topic list | grep apex
 ros2 topic echo /apex/sim/scan --once
 ros2 topic echo /apex/sim/imu --once
+ros2 topic echo /apex/sim/ground_truth/odom --once
 ```
 
-To arm the recognition-tour tracker in simulation:
+Arm the recognition tour:
 
 ```bash
-./APEX/tools/sim/apex_arm_recognition_tour.sh
+./simulation/tools/sim/apex_arm_recognition_tour.sh
 ```
 
-Some wrappers also support `--arm` directly:
+Or start armed:
 
 ```bash
-./APEX/tools/sim/apex_sim_up.sh --scenario baseline --rviz --arm
+./simulation/tools/sim/apex_sim_up.sh --scenario baseline --rviz --arm
 ```
 
-## Direct Simulation Launch
-
-After building and sourcing the workspace, you can launch without the wrapper:
+## Direct Launch
 
 ```bash
-ros2 launch rc_sim_description apex_sim.launch.py scenario:=baseline rviz:=true
+cd ~/AiAtonomousRc/simulation/ros2_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+export APEX_SIM_ROOT=~/AiAtonomousRc/simulation
+ros2 launch rc_sim_description apex_sim.launch.py \
+  scenario:=baseline rviz:=true
 ```
 
-Use the wrapper when you want the repository's default build, scenario, and convenience behavior.
+## SLAM-Enabled Real Vehicle
 
-## Start the Real Blue-Car Stack
-
-Run this on the Raspberry Pi mounted on the vehicle, not on a native Windows PowerShell shell:
+Run only on the physical vehicle:
 
 ```bash
-cd /home/ensta/AiAtonomousRc/APEX
-./tools/core/apex_real_ready_up.sh
+cd ~/AiAtonomousRc/real_vehicle/ros2_ws
+source /opt/ros/jazzy/setup.bash
+colcon build --symlink-install --packages-select voiture_system
+source install/setup.bash
+ros2 launch voiture_system bringup_real_slam_nav.launch.py \
+  use_slam:=true use_nav2:=false use_rviz:=true
 ```
 
-This starts the Docker Compose APEX pipeline with the default real-ready feature set:
+This is the stack identified as the real vehicle. Restrain the car, verify LiDAR and Arduino, and prepare a physical power cutoff before launching.
 
-- IMU ingestion.
-- LiDAR ingestion.
-- IMU+LiDAR fusion.
-- Recognition-tour planner and tracker.
-- `cmd_vel` to PWM actuation bridge.
-- Recognition session manager.
-- Optional offline submap refinement.
-
-Safety notes:
-
-- Keep the vehicle lifted or restrained during first startup.
-- Confirm ESC neutral and steering center before arming motion.
-- Do not run actuation scripts near people or obstacles.
-
-## Capture a Recognition-Tour Run
-
-From the Raspberry Pi APEX directory:
+## Auxiliary APEX Flow Without SLAM
 
 ```bash
-./tools/capture/apex_recognition_tour_capture.sh --run-id recognition_tour_test_01 --timeout-s 60
+cd ~/AiAtonomousRc/real_vehicle
+APEX_SKIP_BUILD=1 ./tools/capture/apex_raw_capture_up.sh
 ```
 
-Expected outputs are written under:
+This is a diagnostic/capture flow, not the primary SLAM launch.
 
-```text
-APEX/apex_recognition_tour/
-```
-
-See [Mapping and Recording Pipeline](18_mapping_and_recording_pipeline.md).
-
-## Stop the Real APEX Stack
+## Legacy Python Stack Without SLAM
 
 ```bash
-cd /home/ensta/AiAtonomousRc/APEX
-./tools/core/apex_core_down.sh
+cd ~/AiAtonomousRc/archive/legacy/full_soft/code
+python3 main.py --simulation
 ```
+
+Its old dependencies may no longer be reproducible. Treat it as a reference.
 
 ## Useful Commands
 
 | Task | Command |
 | --- | --- |
-| List APEX topics | `ros2 topic list | grep apex` |
-| Check LiDAR scans | `ros2 topic hz /lidar/scan_localization` |
-| Check raw IMU | `ros2 topic hz /apex/imu/data_raw` |
-| Check fused odometry | `ros2 topic echo /apex/odometry/imu_lidar_fused --once` |
-| Check recognition planner status | `ros2 topic echo /apex/planning/recognition_tour_status --once` |
-| Check tracker status | `ros2 topic echo /apex/tracking/recognition_tour_status --once` |
-| Check actuation bridge | `ros2 topic echo /apex/vehicle/drive_bridge_status --once` |
-| Show simulation launch args | `ros2 launch rc_sim_description apex_sim.launch.py --show-args` |
-| Show APEX pipeline launch args | `ros2 launch apex_telemetry apex_pipeline.launch.py --show-args` |
+| Show simulation arguments | `ros2 launch rc_sim_description apex_sim.launch.py --show-args` |
+| Show real launch arguments | `ros2 launch voiture_system bringup_real_slam_nav.launch.py --show-args` |
+| Inspect SLAM map | `ros2 topic echo /map --once` |
+| Inspect real odometry | `ros2 topic echo /odom --once` |
+| Inspect simulation ground truth | `ros2 topic echo /apex/sim/ground_truth/odom --once` |
 
 ## Related Documentation
 
-- [Simulation with Gazebo](08_simulation_gazebo.md)
-- [Blue Vehicle Real System](09_blue_vehicle_real_system.md)
-- [Launch Files and Execution Flows](11_launch_files_and_execution_flows.md)
+- [Gazebo Simulation](08_simulation_gazebo.md)
+- [SLAM-Enabled Real Vehicle](09_blue_vehicle_real_system.md)
+- [Launch Files and Flows](11_launch_files_and_execution_flows.md)
 - [Troubleshooting](15_troubleshooting.md)
-

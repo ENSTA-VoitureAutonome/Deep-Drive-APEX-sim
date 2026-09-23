@@ -1,0 +1,67 @@
+\documentclass[conference]{IEEEtran}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{lipsum}
+
+\title{Choix de l'Environnement de Simulation pour le Projet de Véhicule Autonome}
+
+\author{
+    \IEEEauthorblockN{P\^ole Simulation}
+}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Le présent document analyse différents environnements de simulation pour le développement d'un véhicule autonome. Après une comparaison de MATLAB/Simulink, Webots et de la combinaison ROS + Gazebo selon des critères de fidélité physique, d'intégration des capteurs et de standardisation industrielle, nous justifions le choix de ROS + Gazebo comme plateforme optimale pour ce projet.
+\end{abstract}
+
+\section{Introduction}
+
+Le projet "Course de Voitures Autonomes de Paris Saclay" impose des défis d'intégration (châssis Tamiya TT02, Lidar, Caméra) sur une piste inconnue. La simulation est donc impérative pour valider l'intelligence artificielle sans risques matériels. Ce document justifie le choix de notre plateforme technologique face aux alternatives standards.
+
+\section{Analyse des Alternatives}
+
+Pour prendre une décision éclairée, nous avons analysé les forces et les faiblesses des outils candidats en fonction de trois critères : fidélité physique, intégration des capteurs et standardisation dans l'industrie.
+
+\subsection{MATLAB / Simulink}
+
+C'est la référence absolue pour la modélisation mathématique et la conception de lois de commande (PID, MPC). Cependant, pour un projet de robotique mobile autonome, il présente deux inconvénients majeurs : la simulation de capteurs 3D (comme les nuages de points Lidar) est moins performante et plus lourde que dans un moteur physique dédié. De plus, le processus de génération de code et de déploiement sur le matériel embarqué (type Raspberry Pi ou Jetson) ajoute une complexité d'intégration logicielle considérable.
+
+\subsection{Webots}
+
+Webots est une solution "tout-en-un" très séduisante, légère et facile à prendre en main pour le prototypage rapide. Bien qu'il offre une bonne simulation physique, il souffre d'un écosystème communautaire plus restreint que celui de ROS/Gazebo. L'accès à des bibliothèques de navigation prêtes à l'emploi est plus limité, ce qui nous obligerait à développer davantage de briques logicielles de base (drivers, SLAM) nous-mêmes, ralentissant ainsi le développement des stratégies de course.
+
+\section{Le Choix : ROS (Robot Operating System) + Gazebo}
+
+Après avoir évalué les options, l'équipe de simulation a décidé d'implémenter ROS conjointement avec le simulateur Gazebo. Bien que nous soyons conscients de la courbe d'apprentissage initiale que cela implique, cette combinaison offre des avantages décisifs pour la nature de notre compétition.
+
+\subsection{Raisons de la Sélection}
+
+\subsubsection{Architecture Modulaire (Nœuds et Topics)}
+
+ROS nous permet de diviser la voiture en \emph{nœuds} indépendants (perception, localisation, contrôle) qui communiquent entre eux. C'est crucial pour le travail d'équipe : cela permet de modifier et tester le code de la caméra ou des capteurs sans risquer de casser le code contrôlant les moteurs.
+
+\subsubsection{Fidélité des Capteurs (Le ``Jumeau Numérique'')}
+
+Gazebo est le standard de facto pour simuler des capteurs dans l'écosystème ROS. Étant donné que le règlement exige l'utilisation d'un Lidar RP-Lidar A2M8 et la détection de lignes par caméra, Gazebo nous permet d'instancier des versions virtuelles de ces capteurs spécifiques avec un réalisme physique (bruit dans le signal, collisions des rayons laser) supérieur à une modélisation purement mathématique.
+
+\subsubsection{L'Avantage de l'Écosystème (Communauté et Paquets)}
+
+En choisissant ROS, nous accédons à la plus grande collection de logiciels de robotique au monde. Il existe des paquets déjà développés pour la localisation et la cartographie (SLAM) ainsi que pour la navigation autonome que nous pouvons adapter à notre châssis Tamiya TT02, accélérant notre développement par rapport à un démarrage de zéro sur MATLAB ou Webots.
+
+\subsubsection{Standard de l'Industrie}
+
+L'utilisation de ROS et Gazebo ne résout pas seulement le problème de la course, mais utilise les mêmes outils que ceux employés par les entreprises de robotique et d'automobile actuelles. Cela garantit que les compétences développées durant le projet sont directement transférables au monde professionnel.
+
+\section{Conclusion}
+
+Si MATLAB offre la puissance mathématique et Webots la simplicité, ROS + Gazebo représente l'équilibre optimal entre réalisme et ressources. Ce "Jumeau Numérique" nous permettra de tester les situations critiques — comme la détection d'obstacles ou la récupération après erreur — des milliers de fois avant la course réelle. Cette capacité d'itération rapide sera notre avantage compétitif décisif pour la compétition de Paris Saclay.
+
+\bibliographystyle{IEEEtran}
+% \bibliography{references} % <-- Si necesitas referencias, descomenta esto
+
+\end{document}

@@ -15,11 +15,11 @@ log/
 __pycache__/
 *.pyc
 .venv*/
-.codex_pydeps/
 
 # VS Code / IDE
 .vscode/
 .idea/
+.codex
 
 # Misc
 *.csv
@@ -27,11 +27,18 @@ __pycache__/
 *.swo
 *~
 .DS_Store
-# APEX debug artifacts
-APEX/debug_runs/
-APEX/.apex_runtime/
-APEX/ros2_ws/logs/
-src/rc_sim_description/data/runs/
+# Runtime-specific artifacts
+real_vehicle/debug_runs/
+real_vehicle/.apex_runtime/
+real_vehicle/ros2_ws/build/
+real_vehicle/ros2_ws/install/
+real_vehicle/ros2_ws/log/
+simulation/.apex_runtime/
+simulation/ros2_ws/build/
+simulation/ros2_ws/install/
+simulation/ros2_ws/log/
+simulation/data/rc_sim_description/runs/
 
-# Legacy generated artifacts
-full_soft/
+# Archived/generated material
+archive/venv_lidar/
+archive/generated/

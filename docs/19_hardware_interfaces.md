@@ -2,160 +2,76 @@
 
 ## Scope
 
-This file documents the hardware-facing interfaces found in the repository. The current focus is the APEX real-car workflow for the blue vehicle. The alternate `voiture_system` hardware path is documented separately in this file because it uses a different ROS graph.
+This page describes the SLAM-enabled real vehicle and separates auxiliary APEX hardware tools.
 
-## Blue-Car APEX Hardware Stack
+## Real `voiture_system` Stack
 
-| Hardware | Interface | APEX component | Main topics or outputs |
-| --- | --- | --- | --- |
-| Nano IMU | Serial, default `/dev/ttyACM0` | `nano_accel_serial_node` | `/apex/imu/data_raw`, `/apex/imu/acceleration/raw`, `/apex/imu/angular_velocity/raw` |
-| RPLIDAR | Serial, default `/dev/ttyUSB0` | `rplidar_publisher_node` | `/lidar/scan`, `/lidar/scan_localization` |
-| ESC motor control | Linux sysfs PWM | `cmd_vel_to_apex_actuation_node` | PWM channel 0, plus status topics |
-| Steering servo | Linux sysfs PWM | `cmd_vel_to_apex_actuation_node` | PWM channel 1, plus status topics |
-| PC/manual bridge | Network/DDS or bridge protocol | `apex_windows_gamepad_bridge_node` and PC tools | Manual status and session control topics |
+| Interface | Default | Node |
+| --- | --- | --- |
+| RPLIDAR | `/dev/ttyUSB0`, `256000` baud | `rplidar_publisher_node` |
+| Arduino | `/dev/ttyACM0`, `115200` baud | `serial_state_node` |
+| Motor and steering | Linux PWM | `ackermann_drive_node` |
+| LiDAR topic | `/lidar/scan` | SLAM and control |
+| Speed topic | `/vehicle/speed_mps` | Odometry |
+| Command topic | `/cmd_vel` | Ackermann driver |
 
-## Serial Devices
+Defaults are declared in `bringup_real_slam_nav.launch.py`.
 
-APEX defaults:
+## SLAM and TF
 
-| Device | Default path | Default baud | Notes |
-| --- | --- | --- | --- |
-| Nano IMU | `/dev/ttyACM0` | `115200` | Used by the APEX IMU source. |
-| RPLIDAR | `/dev/ttyUSB0` | `115200` | APEX default for the blue-car workflow. |
+`slam_toolbox` requires:
 
-Check devices on Linux:
-
-```bash
-ls -l /dev/ttyACM*
-ls -l /dev/ttyUSB*
-dmesg | tail -n 50
+```text
+map -> odom -> base_link -> laser
 ```
 
-If permissions fail, add the user to the `dialout` group:
+The launch publishes `base_link -> laser`. Verify physical offsets and signs on the car.
+
+## PWM and Safety
+
+Before testing, restrain the vehicle, verify ESC neutral, check steering center and sign, limit speed, and prepare a physical power cutoff. Never run real actuation nodes as a workstation smoke test.
+
+## Serial Permissions
 
 ```bash
 sudo usermod -aG dialout "$USER"
+ls -l /dev/ttyUSB0 /dev/ttyACM0
 ```
 
-Then log out and back in.
+Log out after changing group membership.
 
-## LiDAR Baud Caveat
+## Auxiliary APEX Hardware
 
-Older hardware documentation mentions:
+`real_vehicle/docker/docker-compose.yml` and `real_vehicle/tools/hardware` use another interface set whose defaults can differ, including RPLIDAR at `115200`. Validate the actual sensor instead of copying values between stacks.
 
-- Yellow car LiDAR: `256000`.
-- Blue car LiDAR: `115200`.
-
-APEX defaults to `115200`. If no scans appear, test the actual sensor baud instead of assuming the default is correct for every unit.
-
-## PWM Actuation
-
-The APEX actuation bridge supports two backends:
-
-| Backend | Use case | Output |
-| --- | --- | --- |
-| `sysfs_pwm` | Real blue car | Writes Linux sysfs PWM for ESC and steering. |
-| `sim_pwm_topic` | Gazebo simulation | Publishes `/apex/sim/pwm/motor_dc` and `/apex/sim/pwm/steering_dc`. |
-
-Default real hardware mapping:
-
-| Function | Channel | Notes |
-| --- | --- | --- |
-| Motor/ESC | PWM channel `0` | Often mapped to Raspberry Pi GPIO12 when using the documented two-channel overlay. |
-| Steering servo | PWM channel `1` | Often mapped to Raspberry Pi GPIO13 when using the documented two-channel overlay. |
-
-Older LiDAR/hardware notes mention this Raspberry Pi overlay:
-
-```text
-dtoverlay=pwm-2chan,pin=12,func=4,pin2=13,func2=4
-```
-
-Verify actual Raspberry Pi configuration before assuming these pins are active.
-
-## Docker Device Access
-
-`APEX/docker/docker-compose.yml` gives the `apex_pipeline` container access to:
-
-- `/dev/ttyACM0`
-- `/dev/ttyUSB0`
-- `/sys/class/pwm`
-
-It also runs with:
-
-- `privileged: true`
-- `network_mode: host`
-
-If hardware works on the host but not in Docker, inspect the Compose mappings and the actual device names.
+Auxiliary APEX support includes Nano IMU serial input, I2C/UART checks, sysfs PWM, LiDAR/IMU capture, and PC-side controller bridges.
 
 ## ROS 2 Networking
 
-The tested multi-machine setup uses:
+When Raspberry Pi, WSL, and Windows exchange topics, align `ROS_DOMAIN_ID`, RMW middleware, DDS discovery, firewall rules, and network interfaces.
 
-```bash
-export ROS_DOMAIN_ID=30
-export ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET
-export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-```
+## Simulation Equivalents
 
-When a PC or WSL2 machine needs to see Raspberry Pi topics:
-
-- Put both machines on the same network.
-- Keep the same `ROS_DOMAIN_ID`.
-- Check firewall rules on Windows.
-- Use WSL2 mirrored networking if available.
-- Avoid mixing different DDS discovery assumptions.
-
-## PC and Windows Gamepad Bridge
-
-PC-side tools live under:
-
-```text
-APEX/tools/pc/
-APEX/tools/windows/
-```
-
-These tools support manual interaction, gamepad bridging, and session monitoring. They are auxiliary to the APEX real pipeline.
-
-## Alternate `voiture_system` Hardware Interfaces
-
-The alternate `voiture_system` path uses:
-
-| Hardware/input | Node | Topics |
-| --- | --- | --- |
-| RPLIDAR | `voiture_system/rplidar_publisher_node` | `/lidar/scan` |
-| Arduino state serial | `serial_state_node` | `/vehicle/speed_mps`, `/rear_wheel_speed`, `/steering_angle`, ultrasonic and battery topics where implemented |
-| Motor and steering PWM | `ackermann_drive_node` | Consumes `/cmd_vel`, publishes command/state topics |
-| Odometry | `ackermann_odometry_node` | Publishes `/odom` and TF |
-
-This stack can optionally connect to `slam_toolbox` and Nav2.
-
-## Simulation Hardware Equivalents
-
-In Gazebo Sim:
-
-| Real hardware | Simulation equivalent |
+| Hardware | Simulation |
 | --- | --- |
-| RPLIDAR | Gazebo LaserScan sensor bridged to `/apex/sim/scan`. |
-| Nano IMU | Gazebo IMU sensor bridged to `/apex/sim/imu`. |
-| ESC | Simulated motor duty-cycle topic and Gazebo wheel commands. |
-| Steering servo | Simulated steering duty-cycle topic and Gazebo steering joint commands. |
-| Track/world | Gazebo world file. |
+| RPLIDAR | Gazebo LiDAR and `ros_gz_bridge` |
+| Arduino/encoder | Model state and bridges |
+| ESC/servo | PWM topics and vehicle bridge |
+| Physical track | SDF world |
+| External reference pose | Ground truth |
 
-## Pre-Run Hardware Checklist
+## Pre-Run Checklist
 
-1. Confirm serial device names.
-2. Confirm IMU and LiDAR baud rates.
-3. Confirm `/sys/class/pwm` is available.
-4. Confirm motor neutral duty cycle.
-5. Confirm steering center and direction.
-6. Confirm Docker sees devices.
-7. Confirm ROS topics have stable rates.
-8. Keep the vehicle restrained until status topics are healthy.
+1. Confirm device paths.
+2. Confirm the LiDAR baud rate.
+3. Verify power and common ground.
+4. Inspect topics before allowing movement.
+5. Validate TF and `/odom`.
+6. Enable SLAM and inspect `/map`.
+7. Enable control last.
 
 ## Related Documentation
 
-- [Blue Vehicle Real System](09_blue_vehicle_real_system.md)
+- [Real Vehicle](09_blue_vehicle_real_system.md)
 - [Configuration Reference](17_configuration_reference.md)
 - [Troubleshooting](15_troubleshooting.md)
-- [Topics, Services, Actions, and Parameters](12_topics_services_actions_parameters.md)
-

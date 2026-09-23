@@ -16,7 +16,7 @@ Packages in this repository:
 | --- | --- |
 | `rc_sim_description` | Gazebo Sim vehicle model and simulation tools. |
 | `apex_telemetry` | Current APEX autonomy nodes. |
-| `voiture_system` | Alternate real-car SLAM/Nav2 stack. |
+| `voiture_system` | Primary SLAM-enabled real-vehicle stack and alternate simulation package. |
 
 ## Workspace
 
@@ -26,7 +26,7 @@ This repository uses two source roots:
 
 ```text
 src/
-APEX/ros2_ws/src/
+real_vehicle/ros2_ws/src/
 ```
 
 Build both roots together for the APEX workflow.
@@ -91,7 +91,7 @@ APEX exposes `std_srvs/srv/Trigger` services for kinematics reset and static rec
 
 An action is a long-running goal interface. It is commonly used by navigation stacks for goals that take time and can report feedback.
 
-No custom actions were found in the repository. Nav2 actions are available only when the alternate `voiture_system` Nav2 path is enabled.
+No custom actions were found in the repository. Nav2 actions are available when the real `voiture_system` launch enables Nav2.
 
 ## Parameter
 
@@ -105,9 +105,9 @@ A launch file starts a set of nodes with parameters and conditions.
 
 Examples:
 
-- `src/rc_sim_description/launch/apex_sim.launch.py`
-- `APEX/ros2_ws/src/apex_telemetry/launch/apex_pipeline.launch.py`
-- `src/voiture_system/launch/bringup_real_slam_nav.launch.py`
+- `simulation/ros2_ws/src/rc_sim_description/launch/apex_sim.launch.py`
+- `real_vehicle/ros2_ws/src/apex_telemetry/launch/apex_pipeline.launch.py`
+- `real_vehicle/ros2_ws/src/voiture_system/launch/bringup_real_slam_nav.launch.py`
 
 ## TF
 
@@ -136,7 +136,7 @@ URDF is the XML robot description format used by ROS. It describes robot links, 
 Xacro is a macro language for generating URDF. This repository uses:
 
 ```text
-src/rc_sim_description/urdf/rc_car.urdf.xacro
+simulation/ros2_ws/src/rc_sim_description/urdf/rc_car.urdf.xacro
 ```
 
 ## Gazebo Sim
@@ -159,17 +159,17 @@ In this repository it bridges:
 
 ## SLAM
 
-SLAM means simultaneous localization and mapping. The alternate `voiture_system` stack can use `slam_toolbox` to publish `/map`.
+SLAM means simultaneous localization and mapping. The primary real-vehicle `voiture_system` stack uses `slam_toolbox` to publish `/map` by default.
 
 APEX also contains its own IMU+LiDAR mapping and offline refinement tools.
 
 ## Nav2
 
-Nav2 is the ROS 2 navigation stack. It is available in the alternate `voiture_system` launch path when enabled. The current APEX recognition-tour pipeline does not primarily depend on Nav2.
+Nav2 is the ROS 2 navigation stack. It is available in the real `voiture_system` launch when enabled, but is disabled by default.
 
 ## Ackermann Steering
 
-Ackermann steering is the steering geometry used by car-like vehicles. The alternate `voiture_system` stack explicitly contains Ackermann drive and odometry nodes. APEX also controls a car-like platform, but its current control path is organized around APEX tracking commands and PWM actuation.
+Ackermann steering is the steering geometry used by car-like vehicles. The primary real `voiture_system` stack contains Ackermann drive and odometry nodes. APEX also controls a car-like platform through tracking commands and PWM actuation.
 
 ## Sysfs PWM
 
@@ -192,4 +192,3 @@ RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 - [ROS Architecture](07_ros_architecture.md)
 - [Topics, Services, Actions, and Parameters](12_topics_services_actions_parameters.md)
 - [Simulation with Gazebo](08_simulation_gazebo.md)
-
