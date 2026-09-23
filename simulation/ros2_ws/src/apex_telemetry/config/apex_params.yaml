@@ -489,11 +489,11 @@ recognition_session_manager_node:
     recorder_shutdown_grace_s: 20.0
     run_id_prefix: "recognition_tour"
     run_root_dir: "/work/ros2_ws/apex_recognition_tour"
-    runtime_status_path: "/work/repo/APEXsim/.apex_runtime/sim_session/status.json"
+    runtime_status_path: "/work/repo/simulation/.apex_runtime/sim_session/status.json"
     sensor_capture_script_path: "/work/ros2_ws/scripts/capture/record_manual_sensorfusion_capture.py"
     recognition_recorder_script_path: "/work/ros2_ws/scripts/capture/record_recognition_tour.py"
-    mapper_script_path: "/work/repo/APEXsim/ros2_ws/src/rc_sim_description/scripts/apex_general_track_mapper.py"
-    evaluation_world: "/work/repo/APEXsim/ros2_ws/src/rc_sim_description/worlds/basic_track.world"
+    mapper_script_path: "/work/repo/simulation/ros2_ws/src/rc_sim_description/scripts/apex_general_track_mapper.py"
+    evaluation_world: "/work/repo/simulation/ros2_ws/src/rc_sim_description/worlds/basic_track.world"
     record_timeout_s: 60.0
     publish_tracker_arm: false
     sensor_capture_max_total_bytes: 134217728

@@ -79,7 +79,7 @@ class RecognitionSessionManagerNode(Node):
         self.declare_parameter("run_root_dir", "/work/ros2_ws/apex_recognition_tour")
         self.declare_parameter(
             "runtime_status_path",
-            "/work/repo/APEXsim/.apex_runtime/sim_session/status.json",
+            "/work/repo/simulation/.apex_runtime/sim_session/status.json",
         )
         self.declare_parameter(
             "sensor_capture_script_path",
@@ -91,11 +91,11 @@ class RecognitionSessionManagerNode(Node):
         )
         self.declare_parameter(
             "mapper_script_path",
-            "/work/repo/APEXsim/ros2_ws/src/rc_sim_description/scripts/apex_general_track_mapper.py",
+            "/work/repo/simulation/ros2_ws/src/rc_sim_description/scripts/apex_general_track_mapper.py",
         )
         self.declare_parameter(
             "evaluation_world",
-            "/work/repo/APEXsim/ros2_ws/src/rc_sim_description/worlds/basic_track.world",
+            "/work/repo/simulation/ros2_ws/src/rc_sim_description/worlds/basic_track.world",
         )
         self.declare_parameter("record_timeout_s", 60.0)
         self.declare_parameter("publish_tracker_arm", False)

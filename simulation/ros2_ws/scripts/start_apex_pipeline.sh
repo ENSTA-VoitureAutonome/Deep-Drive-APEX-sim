@@ -71,7 +71,7 @@ if [[ -n "${FIXED_MAP_DIR}" ]]; then
   FIXED_MAP_BUILD_STATUS_JSON="${FIXED_MAP_BUILD_STATUS_JSON:-${FIXED_MAP_DIR%/}/fixed_map_build_status.json}"
 fi
 FIXED_MAP_AUTOBUILD="${APEX_FIXED_MAP_AUTOBUILD:-0}"
-FIXED_MAP_BUILDER_SCRIPT="${APEX_FIXED_MAP_BUILDER_SCRIPT:-/work/repo/APEXsim/tools/sim/build_fixed_map_from_offline_refined.py}"
+FIXED_MAP_BUILDER_SCRIPT="${APEX_FIXED_MAP_BUILDER_SCRIPT:-/work/repo/simulation/tools/sim/build_fixed_map_from_offline_refined.py}"
 FIXED_MAP_ROUTE_ODOM_TOPIC="${APEX_FIXED_MAP_ROUTE_ODOM_TOPIC:-}"
 FIXED_MAP_ROUTE_REPLAN_REQUEST_TOPIC="${APEX_FIXED_MAP_ROUTE_REPLAN_REQUEST_TOPIC:-}"
 FUSION_ODOM_TOPIC="${APEX_FUSION_ODOM_TOPIC:-}"
@@ -487,7 +487,7 @@ else
 fi
 
 if [[ "${ENABLE_OFFLINE_SUBMAP_REFINER}" == "1" ]]; then
-  OFFLINE_REFINER_SCRIPT="${APEX_OFFLINE_REFINER_SCRIPT:-/work/repo/APEXsim/ros2_ws/src/rc_sim_description/scripts/offline_submap_refiner.py}"
+  OFFLINE_REFINER_SCRIPT="${APEX_OFFLINE_REFINER_SCRIPT:-/work/repo/simulation/ros2_ws/src/rc_sim_description/scripts/offline_submap_refiner.py}"
   if [[ -f "${OFFLINE_REFINER_SCRIPT}" ]]; then
     echo "[APEX] Offline submap refiner enabled (script=${OFFLINE_REFINER_SCRIPT})"
     python3 "${OFFLINE_REFINER_SCRIPT}" \
@@ -533,7 +533,7 @@ if [[ "${ENABLE_OFFLINE_SUBMAP_REFINER}" == "1" ]]; then
       -p "manual_motion_linear_deadband_mps:=${APEX_OFFLINE_REFINER_MANUAL_MOTION_LINEAR_DEADBAND_MPS:-0.02}" \
       -p "final_min_scan_count:=${APEX_OFFLINE_REFINER_FINAL_MIN_SCAN_COUNT:-8}" \
       -p "save_on_finalize:=$(normalize_bool_override "${APEX_OFFLINE_REFINER_SAVE_ON_FINALIZE:-true}")" \
-      -p "save_output_dir:=${APEX_OFFLINE_REFINER_SAVE_OUTPUT_DIR:-/work/repo/APEXsim/.apex_runtime/offline_refined_maps}" &
+      -p "save_output_dir:=${APEX_OFFLINE_REFINER_SAVE_OUTPUT_DIR:-/work/repo/simulation/.apex_runtime/offline_refined_maps}" &
     track_pid "offline submap refiner" "$!"
     startup_stage_sleep "offline submap refiner"
   else
@@ -577,7 +577,7 @@ if [[ "${ENABLE_FIXED_MAP_PUBLISHER}" == "1" ]]; then
   if [[ "${ENABLE_IMU_LIDAR_FUSION}" != "1" ]]; then
     ensure_fixed_map_assets
   fi
-  FIXED_MAP_PUBLISHER_SCRIPT="${APEX_FIXED_MAP_PUBLISHER_SCRIPT:-/work/repo/APEXsim/tools/sim/apex_fixed_map_publisher.py}"
+  FIXED_MAP_PUBLISHER_SCRIPT="${APEX_FIXED_MAP_PUBLISHER_SCRIPT:-/work/repo/simulation/tools/sim/apex_fixed_map_publisher.py}"
   if [[ -f "${FIXED_MAP_PUBLISHER_SCRIPT}" ]]; then
     python3 "${FIXED_MAP_PUBLISHER_SCRIPT}" \
       --ros-args \
