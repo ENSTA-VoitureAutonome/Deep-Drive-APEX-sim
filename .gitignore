@@ -19,6 +19,7 @@ __pycache__/
 # VS Code / IDE
 .vscode/
 .idea/
+.codex
 
 # Misc
 *.csv
@@ -26,16 +27,18 @@ __pycache__/
 *.swo
 *~
 .DS_Store
-# APEX debug artifacts
-APEX/debug_runs/
-APEX/.apex_runtime/
-APEX/ros2_ws/build/
-APEX/ros2_ws/install/
-APEX/ros2_ws/log/
-APEXsim/.apex_runtime/
-APEXsim/ros2_ws/build/
-APEXsim/ros2_ws/install/
-APEXsim/ros2_ws/log/
-APEXsim/data/rc_sim_description/runs/
-APEX_external/venv_lidar/
-APEX_external/generated/
+# Runtime-specific artifacts
+real_vehicle/debug_runs/
+real_vehicle/.apex_runtime/
+real_vehicle/ros2_ws/build/
+real_vehicle/ros2_ws/install/
+real_vehicle/ros2_ws/log/
+simulation/.apex_runtime/
+simulation/ros2_ws/build/
+simulation/ros2_ws/install/
+simulation/ros2_ws/log/
+simulation/data/rc_sim_description/runs/
+
+# Archived/generated material
+archive/venv_lidar/
+archive/generated/
