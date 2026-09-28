@@ -62,7 +62,9 @@ def imu_group_delay_s(imu_cfg: dict[str, Any]) -> float:
     return math.sqrt(2.0) / (2.0 * math.pi * f) if f > 0.0 else 0.0
 
 
-def build_split(db_path: Path, split: str, max_imu: int = 40, imu_delay_comp: bool = False) -> dict[str, Any]:
+def build_split(db_path: Path, split: str, max_imu: int = 40, imu_delay_comp: bool = False, perturb: Any = None) -> dict[str, Any]:
+    """``perturb``: optional ``robustness.Perturber`` (per-run perturbation of
+    the stored streams: kept scans, IMU bias, losses and stamps)."""
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     runs = conn.execute(
         "SELECT run_id, run_key, track_name, motion_profile, sensor_profile, seed FROM runs WHERE split = ? AND status = 'completed' ORDER BY run_id",
@@ -77,6 +79,9 @@ def build_split(db_path: Path, split: str, max_imu: int = 40, imu_delay_comp: bo
             "FROM lidar_scans s JOIN ground_truth g ON g.ground_truth_id = s.ground_truth_id WHERE s.run_id = ? ORDER BY s.seq",
             (run_id,),
         ).fetchall()
+        pert = perturb.run(run_id) if perturb is not None else None
+        if pert is not None:
+            rows = [r for r, k in zip(rows, pert.scan_keep(len(rows))) if k]
         n = len(rows)
         beams = rows[0][2]
         t = np.array([r[0] for r in rows], dtype=np.int64)
@@ -92,6 +97,10 @@ def build_split(db_path: Path, split: str, max_imu: int = 40, imu_delay_comp: bo
             dtype=np.float64,
         )
         imu_t = imu_rows[:, 0].astype(np.int64)
+        imu_n = len(imu_t)
+        if pert is not None:  # stored columns ax ay az gx gy gz; the perturbation works on gx gy gz ax ay az
+            imu_t, ga, _ = pert.apply_imu(imu_t, imu_rows[:, [4, 5, 6, 1, 2, 3]])
+            imu_rows = np.column_stack((imu_t.astype(np.float64), ga[:, 3:], ga[:, :3]))
         delay = 0.0
         if imu_delay_comp:
             cfg = conn.execute("SELECT noise_configuration_json FROM sensor_calibration WHERE run_id = ? AND sensor_name = 'imu'", (run_id,)).fetchone()
@@ -139,7 +148,7 @@ def build_split(db_path: Path, split: str, max_imu: int = 40, imu_delay_comp: bo
         pose_parts.append(pose)
         t_parts.append(t)
         meta.append({"run_id": run_id, "run_key": run_key, "track": track, "motion": motion, "sensor": sensor, "seed": seed, "offset": offset, "n": n,
-                     "imu_delay_s": delay})
+                     "imu_delay_s": delay, "imu_n": imu_n, **({"perturbation": pert.realization()} if pert is not None else {})})
         offset += n
     conn.close()
     return {
@@ -156,13 +165,14 @@ def build_split(db_path: Path, split: str, max_imu: int = 40, imu_delay_comp: bo
     }
 
 
-def load_or_build(db_path: Path, cache_dir: Path, split: str, imu_delay_comp: bool = False) -> dict[str, Any]:
+def load_or_build(db_path: Path, cache_dir: Path, split: str, imu_delay_comp: bool = False, perturb: Any = None) -> dict[str, Any]:
     cache_dir.mkdir(parents=True, exist_ok=True)
     stat = db_path.stat()
-    path = cache_dir / f"{split}_{int(stat.st_mtime)}_{stat.st_size}{'_imudelay' if imu_delay_comp else ''}.pt"
+    tag = perturb.tag if perturb is not None else ""
+    path = cache_dir / f"{split}_{int(stat.st_mtime)}_{stat.st_size}{'_imudelay' if imu_delay_comp else ''}{tag}.pt"
     if path.exists():
         return torch.load(path, map_location="cpu", weights_only=False)
-    data = build_split(db_path, split, imu_delay_comp=imu_delay_comp)
+    data = build_split(db_path, split, imu_delay_comp=imu_delay_comp, perturb=perturb)
     torch.save(data, path)
     return data
 

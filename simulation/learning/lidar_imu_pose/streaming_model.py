@@ -346,7 +346,8 @@ def load_checkpoint(path, device: torch.device | str = "cpu") -> tuple["Streamin
     ck = torch.load(path, map_location=device, weights_only=False)
     cfg = ck.get("config", {})
     regularize = any(k.startswith("pair_encoder.cnn.13.") for k in ck["model"])
-    model = StreamingPoseNet(int(cfg.get("hidden", 128)), regularize=regularize, hybrid=bool(cfg.get("hybrid", False)),
+    scales = StreamScales(bias_max=tuple(cfg["bias_max"])) if "bias_max" in cfg else StreamScales()
+    model = StreamingPoseNet(int(cfg.get("hidden", 128)), scales=scales, regularize=regularize, hybrid=bool(cfg.get("hybrid", False)),
                              sweep_profile=bool(cfg.get("sweep_profile", False))).to(device)
     model.load_state_dict(ck["model"])
     model.eval()

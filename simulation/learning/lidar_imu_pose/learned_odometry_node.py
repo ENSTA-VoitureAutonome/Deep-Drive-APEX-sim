@@ -53,7 +53,7 @@ from live_odometry import Estimate, LidarCalibration, LiveOdometry  # noqa: E402
 from pose_dataset.sensors import load_sensor_profiles  # noqa: E402
 from sqlite_windows import imu_group_delay_s  # noqa: E402
 
-DEFAULT_CKPT = HERE.parent / "outputs" / "real2sim_v2_fast" / "hybrid_submap_v3" / "best_model.pt"  # latest trained (fast-motion correction)
+DEFAULT_CKPT = HERE.parent / "outputs" / "real2sim_v5_10hz" / "hybrid_submap_v4" / "best_model.pt"  # the A2M8 in Express mode at 10 Hz (README §9)
 
 
 def _stamp(t_ns: int) -> TimeMsg:

@@ -1,0 +1,18 @@
+# Per-run perturbations of the stored v2 dataset for the robust hybrid (v3),
+# see robustness.py. Ranges are uniform and drawn per run and variant.
+profile: APEX_real            # its imu.thermal block (sensors.yaml) drives the warm-up drift
+thermal: true
+# Turn-on bias top-up: sqrt(new^2 - stored^2) with the stored Gazebo draws of
+# the v2 campaign (0.06, 0.08, 0.05 rad/s) and the widened profile (0.07,
+# 0.10, 0.07 rad/s; LSM6DS3 zero-rate level +-10 dps as 2.5 sigma). The
+# accelerometer spread (0.3 m/s^2 vs +-40 mg) already covers the datasheet.
+gyro_bias_topup_std: [0.036, 0.060, 0.049]
+accel_bias_topup_std: [0.0, 0.0, 0.0]
+imu_offset_ms: [-8.0, 8.0]    # IMU vs LiDAR stamps (USB CDC / serial, stamps on reception)
+imu_jitter_std_ms: [0.0, 1.0] # host reception jitter
+imu_dropout_prob: [0.0, 0.02] # isolated USB losses
+imu_burst_prob: [0.0, 0.002]  # bus hiccups
+imu_burst_len: [2, 4]
+imu_half_rate_prob: 0.25      # 52 Hz: a firmware that does not reach 104 Hz (today's car runs at 55.6 Hz)
+scan_dropout_prob: [0.0, 0.02] # lost revolutions (the interval spans two periods)
+seed: 101

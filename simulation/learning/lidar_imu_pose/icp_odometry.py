@@ -101,7 +101,7 @@ from sqlite_streams import StreamData, sweep_interp
 
 @dataclass(frozen=True)
 class IcpConfig:
-    version: int = 2  # bumped when the algorithm changes (2: FP32 forced, map refinement from the scan solution; 3: ICP_VARIANTS["submap_v3"])
+    version: int = 2  # bumped when the algorithm changes (2: FP32 forced, map refinement from the scan solution; 3: ICP_VARIANTS["submap_v3"]; 4: sparse-patch normals)
     iterations: int = 8  # Gauss-Newton iterations per de-skew pass
     deskew_passes: int = 2
     gates_m: tuple[float, ...] = (0.40, 0.40, 0.25, 0.25, 0.15, 0.15, 0.15, 0.15)
@@ -116,6 +116,8 @@ class IcpConfig:
     # points being down-weighted as outliers of the prediction.
     robust_floor_m: tuple[float, ...] = (0.20, 0.10, 0.05, 0.03, 0.02, 0.0, 0.0, 0.0)
     planarity_max: float = 0.05  # PCA eigenvalue ratio of a usable line patch
+    normal_window: int = 2  # line patch: beams within +-window bins of the point ...
+    normal_min_points: int = 5  # ... of which at least this many valid on the same surface (5 of +-2: every bin, versions <= 3)
     min_pairs: int = 25
     prior_trans_sigma_m: float = 0.02  # constant-velocity prediction error per interval
     gyro_noise_rad: float = 5.0e-4  # gyro integral error per interval besides the bias
@@ -146,6 +148,17 @@ ICP_VARIANTS = {
     # solution kept within 5 cm or 30 % of the step of the scan-to-scan one
     # (at 3.5-5 m/s the fixed 5 cm rejected 5 % of the refinements).
     "submap_v3": IcpConfig(version=3, submap_keyframes=5, deskew_profile=True, submap_agree_rel=0.3),
+    # submap_v3 for the datasheet turn-on bias (LSM6DS3 +-10 dps = 0.17 rad/s):
+    # with 0.03 rad/s the 3-sigma innovation gate of the bias filter starts at
+    # ~0.09 rad/s and rejects such a bias for good.
+    "submap_v3_real": IcpConfig(version=3, submap_keyframes=5, deskew_profile=True, submap_agree_rel=0.3, bias_sigma0_rps=0.08),
+    # submap_v3_real for the A2M8 in Express scan (4 kHz: ~307 samples in 360
+    # one-degree bins, empty bins inside the patches): a normal needs 4 of the
+    # 5 beams of its +-2 bin patch. v3 validation, ICP only: 5 of 5 -> 30 %
+    # segment drift (too few normals), 4 of 5 -> 2.34 %; 3 of 5 and wider
+    # patches (+-3) degrade the dense v2 scans (4-5 % against 2.0 %).
+    "submap_v4": IcpConfig(version=4, submap_keyframes=5, deskew_profile=True, submap_agree_rel=0.3, bias_sigma0_rps=0.08,
+                           normal_window=2, normal_min_points=4),
 }
 
 
@@ -204,18 +217,40 @@ def deskew(ranges: Tensor, valid: Tensor, rate: Tensor, vel: Tensor, time_inc: T
     return torch.where(valid[..., None], pts, torch.full_like(pts, 1.0e4))
 
 
-def line_normals(pts: Tensor, valid: Tensor, ranges: Tensor, angle_inc: Tensor, planarity_max: float) -> tuple[Tensor, Tensor]:
-    """Normals from PCA over 5 consecutive beams that lie on one continuous surface."""
+def line_normals(pts: Tensor, valid: Tensor, ranges: Tensor, angle_inc: Tensor, planarity_max: float,
+                 window: int = 2, min_points: int = 5) -> tuple[Tensor, Tensor]:
+    """Normals from PCA over the beams within +-``window`` bins of each point
+    that lie on its continuous surface.
+
+    ``window=2, min_points=5`` (versions <= 3): 5 consecutive valid beams,
+    consecutive gaps checked. Otherwise the patch keeps the valid beams whose
+    distance to the point fits the surface (0.05 m + 3 x the beam spacing per
+    bin of offset) and needs ``min_points`` of them, the point included: a
+    scanner with fewer samples than bins (A2M8 at 2-4 kHz) leaves empty bins
+    inside every patch."""
     n = pts.shape[1]
-    idx = (torch.arange(n, device=pts.device)[:, None] + torch.arange(-2, 3, device=pts.device)[None]) % n
-    q = pts[:, idx]  # [R, N, 5, 2]
-    v = valid[:, idx].all(-1)
-    gap = torch.linalg.vector_norm(q[:, :, 1:] - q[:, :, :-1], dim=-1)
-    v &= (gap < 0.05 + 3.0 * ranges[..., None] * angle_inc[:, None, None]).all(-1)
-    d = q - q.mean(2, keepdim=True)
-    a = d[..., 0].square().mean(-1)
-    b = (d[..., 0] * d[..., 1]).mean(-1)
-    c = d[..., 1].square().mean(-1)
+    offs = torch.arange(-window, window + 1, device=pts.device)
+    idx = (torch.arange(n, device=pts.device)[:, None] + offs[None]) % n
+    q = pts[:, idx]  # [R, N, K, 2]
+    if window == 2 and min_points == 5:
+        v = valid[:, idx].all(-1)
+        gap = torch.linalg.vector_norm(q[:, :, 1:] - q[:, :, :-1], dim=-1)
+        v &= (gap < 0.05 + 3.0 * ranges[..., None] * angle_inc[:, None, None]).all(-1)
+        d = q - q.mean(2, keepdim=True)
+        a = d[..., 0].square().mean(-1)
+        b = (d[..., 0] * d[..., 1]).mean(-1)
+        c = d[..., 1].square().mean(-1)
+    else:
+        dist = torch.linalg.vector_norm(q - pts[:, :, None], dim=-1)
+        w = valid[:, idx] & valid[..., None] & (dist < 0.05 + 3.0 * ranges[..., None] * angle_inc[:, None, None] * offs.abs())
+        wf = w.float()
+        cnt = wf.sum(-1)
+        v = valid & (cnt >= min_points)
+        mean = (q * wf[..., None]).sum(2, keepdim=True) / cnt.clamp_min(1.0)[..., None, None]
+        d = (q - mean) * wf[..., None]
+        a = d[..., 0].square().sum(-1) / cnt.clamp_min(1.0)
+        b = (d[..., 0] * d[..., 1]).sum(-1) / cnt.clamp_min(1.0)
+        c = d[..., 1].square().sum(-1) / cnt.clamp_min(1.0)
     phi = 0.5 * torch.atan2(2 * b, a - c)  # principal (tangent) direction
     half = 0.5 * (a + c)
     root = torch.sqrt(((a - c) * 0.5).square() + b.square())
@@ -265,7 +300,7 @@ def _register(cfg: IcpConfig, b: dict[str, Tensor], x_prior: Tensor, x0: Tensor,
         vel = x[:, :2] / dt[:, None] if cfg.deskew and cfg.deskew_translation else torch.zeros_like(x[:, :2])
         tgt = deskew(b["prev_ranges"], b["prev_valid"], rate_prev, vel, *geo, sweep=sweeps[0])
         src = deskew(b["cur_ranges"], b["cur_valid"], rate_cur, _rotate(vel, -x[:, 2]), *geo, sweep=sweeps[1])
-        normal, nvalid = line_normals(tgt, b["prev_valid"], b["prev_ranges"], geo[3], cfg.planarity_max)
+        normal, nvalid = line_normals(tgt, b["prev_valid"], b["prev_ranges"], geo[3], cfg.planarity_max, cfg.normal_window, cfg.normal_min_points)
         target, t_normal, t_valid = (tgt, normal, nvalid) if local_map is None else local_map
         for it in range(first, first + iterations):
             c, s = rot(x[:, 2])

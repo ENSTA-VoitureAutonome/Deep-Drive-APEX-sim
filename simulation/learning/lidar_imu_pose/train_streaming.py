@@ -57,8 +57,9 @@ from architectures import PoseNet
 from gridsearch_sqlite import DEFAULT_DB, INK, INK_2, LOSS_SCALE, ROOT, SERIES, SURFACE, _style
 from icp_odometry import ICP_VARIANTS, IcpConfig, run_icp
 from sqlite_streams import StreamData, load_split
+from robustness import RobustConfig, load_split_variants, variants_tag
 from sqlite_windows import WindowSampler
-from streaming_model import StreamingPoseNet
+from streaming_model import StreamingPoseNet, StreamScales
 from train_pose_fusion import compose_planar
 
 OUT = ROOT / "outputs" / "streaming_v2"
@@ -126,6 +127,26 @@ class TrainConfig:
     sensors: tuple[str, ...] = ()  # sensor profiles to train and select on (empty: every profile of the database)
     sweep_profile: bool = False  # network: rotation during the sweeps from the gyro profile (False: constant rate, the historical models)
     imu_delay_comp: bool = False  # IMU stamps moved back by the chip filter delay (False: raw stamps, the historical models)
+    robust: str = ""  # robustness.py config: perturbed copies of the runs (empty: the stored streams only, the historical models)
+    variants: int = 0  # perturbed copies of every training run (validation: the plain runs + one perturbed copy)
+    bias_max: tuple[float, float, float] = StreamScales.bias_max  # gyro z [rad/s], accel x, y [m/s^2] bounds of the bias states
+
+
+def split_variants(split: str, variants: int) -> list[int]:
+    """Variants of a split: training uses the plain runs and ``variants``
+    perturbed copies; validation and test the plain runs and one copy."""
+    if variants <= 0:
+        return [0]
+    return list(range(variants + 1)) if split == "train" else [0, 1]
+
+
+def load_split_cfg(db: Path, split: str, imu_delay_comp: bool, robust: str, variants: int) -> tuple[dict[str, Any], str]:
+    """A split with the robustness variants of the configuration, and its cache tag."""
+    rcfg = RobustConfig.load(robust) if robust else None
+    vs = split_variants(split, variants) if rcfg is not None else [0]
+    if rcfg is None or vs == [0]:
+        return load_split(db, CACHE, split, imu_delay_comp), ""
+    return load_split_variants(db, CACHE, split, imu_delay_comp, rcfg, vs), variants_tag(rcfg, vs)
 
 
 # ---------------------------------------------------------------- training
@@ -236,21 +257,22 @@ def train(cfg: TrainConfig, db: Path, out: Path, log, icp_dir: Path = OUT) -> No
     torch.manual_seed(cfg.seed)
     dev = torch.device("cuda")
     data, sel = {}, {}
+    tags = {}
     for s in ("train", "validation"):
-        full = load_split(db, CACHE, s, cfg.imu_delay_comp)
+        full, tags[s] = load_split_cfg(db, s, cfg.imu_delay_comp, cfg.robust, cfg.variants)
         data[s], sel[s] = subset_runs(full, 1, cfg.sensors) if cfg.sensors else (full, None)
         if cfg.hybrid and sel[s] is not None:
-            load_or_run_icp(s, StreamData(full, dev), icp_dir, log, cfg.icp_variant, db, cfg.imu_delay_comp)  # cached on the whole split
+            load_or_run_icp(s, StreamData(full, dev), icp_dir, log, cfg.icp_variant, db, cfg.imu_delay_comp, tags[s])  # cached on the whole split
         del full
     sds = {s: StreamData(d, dev) for s, d in data.items()}
     if cfg.hybrid:
         for s, sd in sds.items():
-            res = load_or_run_icp(s, sd if sel[s] is None else None, icp_dir, log, cfg.icp_variant, db, cfg.imu_delay_comp)
+            res = load_or_run_icp(s, sd if sel[s] is None else None, icp_dir, log, cfg.icp_variant, db, cfg.imu_delay_comp, tags[s])
             sd.attach_icp(res if sel[s] is None else {k: (v[sel[s]] if torch.is_tensor(v) else v) for k, v in res.items()})
     if cfg.sensors:
         log(f"[train] sensor profiles {list(cfg.sensors)}: {len(data['train']['runs'])} train / {len(data['validation']['runs'])} validation runs")
     truth_val = om.split_truth(data["validation"])
-    model = StreamingPoseNet(cfg.hidden, hybrid=cfg.hybrid, sweep_profile=cfg.sweep_profile).to(dev)
+    model = StreamingPoseNet(cfg.hidden, scales=StreamScales(bias_max=tuple(cfg.bias_max)), hybrid=cfg.hybrid, sweep_profile=cfg.sweep_profile).to(dev)
     params = sum(p.numel() for p in model.parameters())
     steps_per_epoch = math.ceil(sds["train"].intervals / (cfg.lanes * cfg.chunk))
     opt = torch.optim.AdamW(model.parameters(), lr=cfg.learning_rate, weight_decay=cfg.weight_decay)
@@ -327,22 +349,22 @@ def _same_icp(cached: dict[str, Any], cfg: IcpConfig) -> bool:
     return all(cached.get(k, default[k]) == v for k, v in asdict(cfg).items() if k != "max_lanes")
 
 
-def _db_tag(db: Path, imu_delay_comp: bool = False) -> dict[str, Any]:
-    return {"name": db.name, "bytes": db.stat().st_size, **({"imu_delay_comp": True} if imu_delay_comp else {})}
+def _db_tag(db: Path, imu_delay_comp: bool = False, split_tag: str = "") -> dict[str, Any]:
+    return {"name": db.name, "bytes": db.stat().st_size, **({"imu_delay_comp": True} if imu_delay_comp else {}), **({"split_tag": split_tag} if split_tag else {})}
 
 
 def load_or_run_icp(split: str, sd: StreamData | None, out: Path, log, variant: str = "scan", db: Path = DEFAULT_DB,
-                    imu_delay_comp: bool = False) -> dict[str, Any]:
+                    imu_delay_comp: bool = False, split_tag: str = "") -> dict[str, Any]:
     """Cached classical odometry of a split; a cache is reused only for the
-    same ICP configuration, the same database and the same IMU stamps
-    (caches written before the database tag belong to the default, v1
-    database)."""
+    same ICP configuration, the same database, the same IMU stamps and the
+    same robustness variants (``split_tag``; caches written before the
+    database tag belong to the default, v1 database)."""
     cfg = ICP_VARIANTS[variant]
-    suffix = "_imudelay" if imu_delay_comp else ""
+    suffix = ("_imudelay" if imu_delay_comp else "") + split_tag
     path = out / (f"icp_{split}{suffix}.pt" if variant == "scan" else f"icp_{variant}_{split}{suffix}.pt")
     if path.exists():
         cached = torch.load(path, weights_only=False)
-        same_db = cached.get("db", _db_tag(DEFAULT_DB) if DEFAULT_DB.exists() else None) == _db_tag(db, imu_delay_comp)
+        same_db = cached.get("db", _db_tag(DEFAULT_DB) if DEFAULT_DB.exists() else None) == _db_tag(db, imu_delay_comp, split_tag)
         if _same_icp(cached["config"], cfg) and same_db:
             return cached
         if not same_db:
@@ -351,7 +373,7 @@ def load_or_run_icp(split: str, sd: StreamData | None, out: Path, log, variant: 
         raise FileNotFoundError(f"{path}: run the icp stage first")
     t0 = time.time()
     res = run_icp(sd, cfg, log=log)
-    res["db"] = _db_tag(db, imu_delay_comp)
+    res["db"] = _db_tag(db, imu_delay_comp, split_tag)
     log(f"[icp] {split}: {time.time() - t0:.0f} s")
     torch.save(res, path)
     return res
@@ -595,6 +617,9 @@ def main() -> None:
     ap.add_argument("--sensors", nargs="*", default=[], help="train / report on these sensor profiles only (e.g. APEX_real)")
     ap.add_argument("--imu-delay-comp", action="store_true", help="move the IMU stamps back by the chip filter delay (every stage)")
     ap.add_argument("--sweep-profile", action="store_true", help="train: the network compensates the rotation during each sweep with the gyro profile")
+    ap.add_argument("--robust", default="", help="robustness.py config (e.g. config/robust_real.yaml): perturbed copies of the runs (icp and train stages)")
+    ap.add_argument("--variants", type=int, default=0, help="with --robust: perturbed copies of every training run (validation / test: one)")
+    ap.add_argument("--bias-max", type=float, nargs=3, default=list(StreamScales.bias_max), help="bounds of the bias states: gyro z [rad/s], accel x y [m/s^2]")
     args = ap.parse_args()
     torch.backends.cudnn.benchmark = True
     torch.backends.cuda.matmul.allow_tf32 = True
@@ -612,11 +637,12 @@ def main() -> None:
 
     if args.stage == "icp":
         for split in ("validation", "test", "train"):  # train: input of the hybrid network
-            load_or_run_icp(split, StreamData(load_split(args.db, CACHE, split, args.imu_delay_comp), torch.device("cuda")), args.out, log, args.icp, args.db,
-                            args.imu_delay_comp)
+            data, tag = load_split_cfg(args.db, split, args.imu_delay_comp, args.robust, args.variants)
+            load_or_run_icp(split, StreamData(data, torch.device("cuda")), args.out, log, args.icp, args.db, args.imu_delay_comp, tag)
+            del data
     elif args.stage == "train":
         train(TrainConfig(epochs=args.epochs, hybrid=args.hybrid, icp_variant=args.icp, sensors=tuple(args.sensors), imu_delay_comp=args.imu_delay_comp,
-                          sweep_profile=args.sweep_profile),
+                          sweep_profile=args.sweep_profile, robust=args.robust, variants=args.variants, bias_max=tuple(args.bias_max)),
               args.db, stage_out, log, icp_dir=args.out)
     else:
         report(args.db, args.out, log, tuple(args.sensors), args.imu_delay_comp)
