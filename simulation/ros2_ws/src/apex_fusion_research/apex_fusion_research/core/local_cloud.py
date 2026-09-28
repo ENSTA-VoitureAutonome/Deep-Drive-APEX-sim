@@ -67,13 +67,17 @@ class ScanAccumulator:
 
     def __init__(self, window_s: float = 2.0, window_m: float = 3.0, range_min: float = 0.15, range_max: float = 6.0, voxel: float = 0.05,
                  reject_isolated: bool = True, carve: bool = True, carve_margin_m: float = 0.10, carve_no_return_m: float = 4.0,
-                 carve_no_return_fov_deg: float = 120.0) -> None:
+                 carve_no_return_fov_deg: float = 120.0, carve_min_return_rate: float = 0.5, return_rate_alpha: float = 0.1) -> None:
         self.window_ns = int(window_s * 1e9)
         self.window_m = float(window_m)
         self.range_min, self.range_max, self.voxel = float(range_min), float(range_max), float(voxel)
         self.reject_isolated = bool(reject_isolated)
         self.carve, self.carve_margin, self.carve_no_return = bool(carve), float(carve_margin_m), float(carve_no_return_m)
         self.carve_fov = math.radians(carve_no_return_fov_deg)
+        # Share of recent revolutions with a return, per beam (exponential average). A beam that rarely returns looks at
+        # the car's own structure (the shadow of a front wheel beside the car): no return there is not free space.
+        self.carve_min_rate, self.rate_alpha = float(carve_min_return_rate), float(return_rate_alpha)
+        self.return_rate: np.ndarray | None = None
         self.scans: deque[tuple[int, float, np.ndarray]] = deque()  # (stamp, travel at the stamp, points in odom)
         self.travel = 0.0
         self._last_xy: tuple[float, float] | None = None
@@ -85,6 +89,12 @@ class ScanAccumulator:
 
         ``body`` = (x_min, x_max, y_min, y_max) of the car in base_link: returns
         inside it are the car itself (wheels, chassis) and are dropped."""
+        r = np.asarray(ranges, dtype=float)
+        got = (np.isfinite(r) & (r >= self.range_min)).astype(float)
+        if self.return_rate is None or len(self.return_rate) != len(r):
+            self.return_rate = got
+        else:
+            self.return_rate += self.rate_alpha * (got - self.return_rate)
         x, y = pose_odom_base[0], pose_odom_base[1]
         if self._last_xy is not None:
             self.travel += math.hypot(x - self._last_xy[0], y - self._last_xy[1])
@@ -111,7 +121,10 @@ class ScanAccumulator:
         moved. No return on the three beams counts as free only for points closer
         than ``carve_no_return_m`` and within ``carve_no_return_fov_deg`` of the
         front: a close obstacle always answers, far away a missing return may be
-        a dropout, and behind the car the chassis hides the beams."""
+        a dropout, and behind the car the chassis hides the beams. Nor on beams
+        that rarely return (``carve_min_return_rate``): a front wheel hides a
+        sector beside the car, and without this the wall the car has just
+        passed was erased there and split in two (the lap-1 driver then lost it)."""
         if len(pts_odom) == 0:
             return np.zeros(0, dtype=bool)
         r = np.asarray(ranges, dtype=float)
@@ -125,9 +138,11 @@ class ScanAccumulator:
         beyond = np.ones(len(rel), dtype=bool) if full else (raw >= 0) & (raw < n)
         limit = rng + self.carve_margin + 0.03 * rng
         no_return_free = (rng < self.carve_no_return) & (np.abs(bearing) < self.carve_fov)
+        answers = self.return_rate >= self.carve_min_rate if self.return_rate is not None and len(self.return_rate) == n else np.ones(n, dtype=bool)
         for k in (-1, 0, 1):
-            rk = r[(b + k) % n]
-            beyond &= np.where(np.isfinite(rk), rk > limit, no_return_free)
+            bk = (b + k) % n
+            rk = r[bk]
+            beyond &= np.where(np.isfinite(rk), rk > limit, no_return_free & answers[bk])
         return beyond & (rng > self.range_min) & (rng < self.range_max)
 
     @property

@@ -604,7 +604,7 @@ run_referee_node (truth only): lap completed / collision / off-track -> run_resu
 
 ```bash
 ./simulation/tools/sim/apex_real2sim_up.sh --track val_mixed --motion medium --seed 1 --laps 2 --driver format
-# --checkpoint <file>           default: learning/outputs/real2sim_v2_fast/hybrid_submap_v3/best_model.pt (the last trained)
+# --checkpoint <file>           default: learning/outputs/real2sim_v5_10hz/hybrid_submap_v4/best_model.pt (A2M8 Express 4 kHz at 10 Hz)
 # --driver race|format          race (default): explore, map and race (§13.1); format: follow the dataset format
 # --motion slow_variable        real-car speeds
 # --sensor APEX_real_compat     A2M8 in the 2 kHz protocol
@@ -681,15 +681,24 @@ run_referee_node (truth only): lap completed / collision / off-track -> run_resu
 
 **Lane-width prior.** Curbs (7 cm) sit below the LiDAR plane (12 cm): the car cannot see them but hits them. It assumes every lane is at least `w_min` = 1.5 m wide:
 - **Lap 1:** it follows the visible wall at 0.75 m, never farther than `w_min − W/2 − 0.10` = 1.24 m, or the centre when it sees both walls.
-- **Race:** the corridor is bounded by the mapped walls and obstacles; on a blind side (curb) the bound is `w_min` minus the distance to the opposite wall. Where no wall is recognised on either side (a wall mapped in short pieces), the nearest mapped boundary plays that role, and the corridor is also capped at ±0.25 m around the lap-1 path.
+- **Race:** the corridor is bounded by the mapped walls and obstacles; on a blind side (curb) the bound is `w_min` minus the distance to the opposite wall, less `planner.blind_margin_m` = 0.20 m. That edge is a prior, not a measurement, and at 3 m/s the belief error reaches 0.10–0.15 m. With 0.10 m, the line left 9 cm to a curb of `test_unseen` and the car hit it (seed 12). In the 2D harness over 20 seeds, 0.20 m raised the smallest race clearance from 15 to 23 cm at the same lap time. Where no wall is recognised on either side (a wall mapped in short pieces), the nearest mapped boundary plays that role, and the corridor is also capped at ±0.25 m around the lap-1 path.
 - **Limitation:** a stretch with curbs on both sides has no wall to follow. The car holds its heading for 2 m at 0.8 m/s and stops. `w_min` must not be larger than the narrowest lane.
 
 **Local cloud.** The real A2M8 (and the realism layer) gives returns that are not obstacles, and the reactive planner and the guard must not react to them:
 - **Spurious returns** (dust, cross-talk: isolated beams): a return is kept if a neighbour up to two beams away agrees with it, or if it lies between its two neighbours (a wall at grazing incidence changes range fast from beam to beam).
 - **The car's own wheel** (~0.15 m at ~98°): returns inside the body box are dropped. The de-skewing moves those hits with the car's motion between the sample and the stamp (up to one revolution: 0.27 m at 3.5 m/s), so the box is extended forward by speed × 77 ms. Nothing real can be there without a collision.
 - **The floor**: braking pitches the sprung body ~0.6° per m/s², and the laser plane (12 cm high) then hits the floor 4–5 m ahead. Each new revolution carves the stored points it sees through (its beam and both neighbours return farther). No return also carves, but only closer than 4 m and within ±120° of the front, because the chassis hides the rear sector.
+- **The wheel shadow**: a front wheel hides ~20° beside the car (for example −109° to −88°), and those beams never return. The accumulator keeps the recent return rate of every beam. No return carves only on beams that return at least half of the time (`carve_min_return_rate`). Before this, the wall the car had just passed was erased in the shadow and split in two. The lap-1 driver then lost it, and the proven lane below collapsed: seed 14 crept at 0.3 m/s for 17 s of lap 1.
 
 **Sharp turns on lap 1.** When the reference wall recedes faster than the car can turn (a sharp turn of the lane), no path keeps the `w_min` bound. Rather than stopping, and then taking the longest free path, which may cross a curb, the car keeps the paths that break the bound least, following the wall as closely as it can, at `v_blind` (0.8 m/s).
+
+**Proven lane on lap 1** (`reactive.lane_*`, `reactive.w_lane`). The lane rule only holds across a visible wall. Beyond the end of every wall it sees, the car knows nothing: an invisible curb may cross its path. Two corners of `test_unseen` are like this (see below).
+- **Where the problem appears:** at the corner the outer wall ends and becomes a curb. The inner wall turns away from the car, so its continuation is seen edge-on and gives only a few scattered returns until the car reaches the apex. With the A2M8 at 4 kHz and 12 % missing returns, the car saw the turn too late at 1.4 m/s and drove straight into the curb.
+- **Where the lane is proven:** a point is in the lane when a wall lies beside it (the nearest wall point is its perpendicular foot) at most the `w_min` bound away (1.24 m), or when it lies between two walls at most 2.8 m apart (`lane_known`).
+- **Sparse walls count:** the few returns that continue a wall are chained to it when each lies within 0.45 m (`lane_join_m`) of the wall or of the previous piece. Every piece keeps its own direction, so a pillar next to a wall does not hide the wall.
+- **Driving by it:** every candidate path is scored by the length of its proven prefix (`w_lane`). The speed is capped so the car could stop before the end of that prefix, braking at 0.8 m/s² and stopping 0.5 m short (`lane_decel_mps2`, `lane_margin_m`). The floor is `v_min` (0.3 m/s).
+- **Effect:** the car slows down where the lane ahead is not proven. That leaves the LiDAR time to see where the lane goes, and it prefers the paths that stay beside a wall. On the race laps the line comes from the map, and no cap applies.
+- **Replay:** every run writes `driver_inputs.csv`, the lap-1 scans exactly as the driver received them. `tools/analysis/replay_reactive.py <run_dir> --set ... --plot t...` replays the driver on them offline and draws the proven lane at those times.
 
 **Race line.** The lap-1 path (optimized SLAM graph, cut at the start line) is smoothed into a closed reference. A corridor is ray-cast along its normals, then eroded. The line minimizes the linearized curvature κ_ref + κ_ref²α + α'' inside the corridor (box-constrained least squares, ADMM). The footprint clearance is then verified; where it is short, the bounds are tightened toward the side with more room (`--race-line centre` gives a centred path). The speed profile uses `min(v_max, √(a_lat/κ), 1.2 + 5·width)` with forward/backward acceleration limits.
 
@@ -748,7 +757,16 @@ Result figures of the same run (`plot_real2sim_sensors.py`):
 
 ![Car's map against the real track, seed 7](doc/images/race/mapa_s7.png)
 
-**The odometry model in use** (`learning/outputs/real2sim_v2_fast/hybrid_submap_v3/best_model.pt`, the default checkpoint). It is a hybrid: classical scan-to-submap ICP (v3) with a neural network (488 753 parameters) that corrects it, using the LiDAR and the IMU. It was trained 40 epochs on the v2 `APEX_real` dataset, and the checkpoint of epoch 38 was kept (best validation segment drift). Details: `learning/lidar_imu_pose/README.md`.
+**The odometry model in use.** The default checkpoint is `learning/outputs/real2sim_v5_10hz/hybrid_submap_v4/best_model.pt` (`learning/lidar_imu_pose/README.md` §9). It is the last trained model, and it matches the sensor the real car will have after its code changes: the A2M8 in Express scan (4 kHz) at 10 Hz, the `APEX_real` profile.
+
+- **Architecture:** unchanged. It is a hybrid: classical scan-to-submap ICP (`submap_v4`: normals from 4 of 5 neighbours) with a neural network (488 753 parameters) that corrects it, using the LiDAR and the IMU.
+- **Training:** dataset v4 (`APEX_real`, 4 kHz, 10 Hz) plus two perturbed copies of every run: stamp offsets and jitter, lost samples and revolutions, 52 Hz IMU.
+- **Test:** segment drift 0.93 % (0.96 % perturbed). The previous default, `real2sim_v3_robust/hybrid_submap_v3_real`, gives 1.77 % on the same test.
+- **Closed loop:** `test_unseen`, 3 laps, seeds 6–15, seeds 9 and 12 twice, and seed 7 with +0.17 rad/s gyro bias and +8 ms IMU offset: **13/13 completed**. Smallest true clearance 7.9 cm, lap 1 45–51 s, race laps 21–25 s, odometry drift 0.5–1.5 %. This takes the proven lane and the wheel-shadow fix of section 13.1, and `planner.blind_margin_m` = 0.20.
+
+The race above and the figures below were made with an earlier default, `real2sim_v2_fast/hybrid_submap_v3`, on the 8 kHz / 13 Hz sensor. The previous checkpoints are kept: pass `--checkpoint` to use one.
+
+For the 8 kHz / 13 Hz sensor of the earlier validation, use `--sensor APEX_real_sensitivity --checkpoint learning/outputs/real2sim_v3_robust/hybrid_submap_v3_real/best_model.pt`.
 
 ![Training curves](doc/images/odometry_model/training_curves.png)
 

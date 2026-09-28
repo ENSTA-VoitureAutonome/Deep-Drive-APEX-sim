@@ -10,7 +10,9 @@ world, in seconds instead of Gazebo at a real-time factor of 0.5:
 * **LiDAR**: exact ray casting of the track geometry at the scan plane
   (curbs below it are not seen), 360 beams at 13 Hz, the rear sector
   145-205 deg occluded, range noise and dropouts; delivered with the
-  estimator latency.
+  estimator latency (``--scan-hz``, default 10 Hz). ``--lidar-sample-hz`` keeps only the one-degree bins
+  hit by the device samples of a revolution (A2M8: 4000 in Express scan,
+  ~307 of 360 bins at 13 Hz), ``--dropout`` sets the missing-return rate.
 * **Odometry**: the true motion with a scale error and a heading drift (the
   magnitudes of the learned odometry), plus noise.
 * **SLAM**: ``map -> odom`` brings the odometry back to the truth with a few
@@ -51,7 +53,8 @@ from pose_dataset.geometry import FootprintChecker, rect_corners  # noqa: E402
 from pose_dataset.raycast import RayCaster  # noqa: E402
 from pose_dataset.vehicle import Actuators  # noqa: E402
 
-BEAMS, SCAN_HZ, LIDAR_Z = 360, 13.03, 0.12
+BEAMS, LIDAR_Z = 360, 0.12
+SCAN_HZ = 10.0  # revolution rate (sensors.yaml APEX_real; --scan-hz)
 
 
 class MapBuilder:
@@ -97,7 +100,8 @@ class MapBuilder:
         return Grid(data, self.res, self.ox, self.oy)
 
 
-def run_one(track_name: str, motion: str, seed: int, laps: int, cfg: RaceDriverConfig, out_dir: Path | None, max_sim_s: float) -> dict:
+def run_one(track_name: str, motion: str, seed: int, laps: int, cfg: RaceDriverConfig, out_dir: Path | None, max_sim_s: float,
+            sample_hz: float = 0.0, dropout: float = 0.03) -> dict:
     rs = run_setup(track_name, motion, seed, laps)
     track, vcfg = rs["track"], rs["vcfg"]
     rng = np.random.default_rng(1000 + seed)
@@ -177,7 +181,13 @@ def run_one(track_name: str, motion: str, seed: int, laps: int, cfg: RaceDriverC
             floor = np.where(slope > 1e-4, LIDAR_Z / np.maximum(slope, 1e-4), np.inf)
             r = np.minimum(r, floor)
             r = r + rng.normal(0, 1, BEAMS) * (0.001 + 0.003 * np.where(np.isfinite(r), r, 0))
-            r[occluded | (rng.random(BEAMS) < 0.03) | (r < 0.15)] = np.inf
+            if sample_hz > 0.0:  # bins without a device sample in this revolution
+                step = 360.0 * SCAN_HZ / sample_hz
+                hit = np.zeros(BEAMS, dtype=bool)
+                ang = rng.uniform(0.0, step) + step * np.arange(int(360.0 / step) + 1)
+                hit[(ang[ang < 360.0]).astype(int)] = True
+                r[~hit] = np.inf
+            r[occluded | (rng.random(BEAMS) < dropout) | (r < 0.15)] = np.inf
             self_hit = (np.abs(np.degrees(angles) - 97.5) < 1.0) & (rng.random(BEAMS) < 0.45)  # the car's own wheel (as in Gazebo)
             r[self_hit] = 0.155
             u = rng.random(BEAMS)  # spurious returns, harsh sensor profile (sensors.yaml): short 1 %, random 0.6 %
@@ -311,6 +321,7 @@ def figure(path: Path, track, tr: np.ndarray, phases: np.ndarray, core: RaceDriv
 
 
 def main() -> None:
+    global SCAN_HZ
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--track", default="test_unseen")
     ap.add_argument("--motion", default="medium", help="only seeds the spawn / actuator draws of the format")
@@ -320,7 +331,11 @@ def main() -> None:
     ap.add_argument("--max-sim-s", type=float, default=400.0)
     ap.add_argument("--out", type=Path, default=SIM / "data" / "race_harness")
     ap.add_argument("--set", nargs="*", default=[], help="config overrides section.field=value, e.g. reactive.v_explore_mps=1.2")
+    ap.add_argument("--lidar-sample-hz", type=float, default=0.0, help="device samples per second (0: every bin, the historical harness; A2M8 Express: 4000)")
+    ap.add_argument("--dropout", type=float, default=0.03, help="missing-return probability per bin (APEX_real at 4 kHz: 0.12)")
+    ap.add_argument("--scan-hz", type=float, default=SCAN_HZ, help="LiDAR revolution rate (APEX_real: 10; today's car driver: 13.03)")
     a = ap.parse_args()
+    SCAN_HZ = a.scan_hz
     from pose_dataset.vehicle import load_vehicle_config  # noqa: PLC0415
 
     cfg = RaceDriverConfig(vehicle=vehicle_limits(load_vehicle_config()))
@@ -333,7 +348,7 @@ def main() -> None:
         setattr(obj, field, type(cur)(value) if not isinstance(cur, bool) else value.lower() in ("1", "true", "yes"))
     rows = []
     for seed in a.seeds:
-        r = run_one(a.track, a.motion, seed, a.laps, cfg, a.out, a.max_sim_s)
+        r = run_one(a.track, a.motion, seed, a.laps, cfg, a.out, a.max_sim_s, a.lidar_sample_hz, a.dropout)
         rows.append(r)
         pt = r.get("plan_truth", {})
         print(f"seed {seed}: {r['status']:9s} {r['failure_reason']:28s} laps {['%.1f' % x for x in r['true_lap_times_s']]} "

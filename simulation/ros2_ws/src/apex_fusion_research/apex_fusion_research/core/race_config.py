@@ -95,8 +95,12 @@ class ReactiveConfig:
     range_min_m: float = 0.15
     range_max_m: float = 6.0
     body_margin_m: float = 0.04  # returns within the car body (+ this margin) are the car itself
-    lidar_period_s: float = 1.0 / 13.0  # one revolution of the A2M8 (nominal sensor data)
-    cluster_eps_m: float = 0.20
+    lidar_period_s: float = 1.0 / 10.0  # one revolution of the A2M8 (nominal sensor data: 10 Hz, sensors.yaml APEX_real)
+    # Points closer than this join one cluster. 0.25 (was 0.20): with the A2M8 at
+    # 4 kHz (~307 samples in 360 bins, 12 % dropouts) walls split into clusters too
+    # short to count as walls, the driver lost them and ran over invisible curbs
+    # (2D harness at 4 kHz: 19/20 -> 10/10 seeds; 0.30 cost 3 cm of clearance at 8 kHz).
+    cluster_eps_m: float = 0.25
     wall_min_length_m: float = 1.8  # decoration boxes reach 1.66 m (diagonal), pillars 0.3 m
     wall_min_points: int = 15
     side_x_min_m: float = -0.8  # "beside the car" window (base_link x)
@@ -120,6 +124,15 @@ class ReactiveConfig:
     w_block: float = 6.0
     w_guide: float = 2.0
     local_path_lookahead_m: float = 0.7
+    # Proven lane. The lane rule only holds across a visible wall: a point is known to be in the lane when a wall
+    # lies beside it (perpendicular foot) within the w_min bound, or when it lies between two walls. Beyond the end of
+    # every visible wall an invisible curb may cross the path (a corner whose outer wall becomes a curb), so the car
+    # drives no faster than it can stop within the proven part of its path, which leaves the LiDAR time to see where
+    # the lane goes, and prefers the paths proven farthest.
+    lane_join_m: float = 0.45  # a short cluster this close to a wall extends it (a corner seen through a few sparse returns)
+    lane_decel_mps2: float = 0.8  # braking assumed before the end of the proven lane (gentler than a_dec: margin for sensing)
+    lane_margin_m: float = 0.5  # stop this far before the end of the proven lane (latency + one revolution)
+    w_lane: float = 4.0
 
 
 @dataclass
@@ -147,7 +160,10 @@ class PlannerConfig:
     wall_component_min_m: float = 2.0
     wall_detect_max_m: float = 1.8
     wall_margin_m: float = 0.20
-    blind_margin_m: float = 0.10
+    # Margin to the invisible edge implied by w_min on the race laps. 0.20 (was 0.10): that edge is a prior, not a
+    # measurement, and at 3 m/s the belief error reaches 0.1-0.15 m; 0.10 left 9 cm to a curb of test_unseen and the
+    # car hit it (seed 12). 2D harness, 20 seeds: race clearance min 15 -> 23 cm, same lap time.
+    blind_margin_m: float = 0.20
     obstacle_margin_m: float = 0.15
     none_half_width_m: float = 0.25
     bound_erosion_m: float = 0.3

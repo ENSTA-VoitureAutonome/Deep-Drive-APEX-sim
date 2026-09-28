@@ -47,7 +47,7 @@ WAIT, EXPLORE, CLOSING, PLANNING, RACE, REACTIVE_ONLY, FINAL, DONE = "wait", "ex
 LOG_COLUMNS = ["t", "phase", "x_map", "y_map", "yaw_map", "x_odom", "y_odom", "yaw_odom", "speed", "v_cmd", "steer_deg", "pose_age_s",
                "corr_raw_dx", "corr_raw_dy", "corr_raw_dyaw", "corr_app_dx", "corr_app_dy", "corr_app_dyaw",
                "mode", "planner", "left_wall", "right_wall", "d_wall", "d_target", "clr_min", "n_feasible", "react_ms",
-               "lap_own", "travel", "s_race", "lat_race", "guided"]
+               "lap_own", "travel", "s_race", "lat_race", "guided", "lane_known", "v_lane"]
 
 
 class ImmediateFuture:
@@ -362,7 +362,7 @@ class RaceDriverCore:
                st.mode if st is not None else "", d.get("planner", ""), int(bool(st and st.left_wall)), int(bool(st and st.right_wall)),
                f"{d.get('d_wall', float('nan')):.3f}", f"{d.get('d_target', float('nan')):.3f}", f"{d.get('clr_min', float('nan')):.3f}",
                d.get("n_feasible", ""), f"{self.react_ms:.1f}", self.counter.laps if self.counter else 0, f"{self.travel:.3f}",
-               f"{self.s_race:.3f}", f"{self.lat_race:.4f}", int(self.guided)]
+               f"{self.s_race:.3f}", f"{self.lat_race:.4f}", int(self.guided), f"{d.get('lane_known', float('nan')):.2f}", f"{d.get('v_lane', float('nan')):.2f}"]
         return v, steer, row
 
     def status(self) -> dict:

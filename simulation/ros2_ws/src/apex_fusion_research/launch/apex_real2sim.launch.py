@@ -121,6 +121,9 @@ def _setup(context, *_args, **_kwargs):  # noqa: ANN001, ANN202
         "reactive.w_min_m": float(arg("w_min")), "reactive.v_explore_mps": float(arg("v_explore")),
         "planner.mode": arg("race_line"), "race.v_max_mps": float(arg("v_max_race")), "race.a_lat_mps2": float(arg("a_lat")),
     }
+    for item in arg("driver_set").split():  # tuning: race driver config overrides section.field=value
+        key, value = item.split("=", 1)
+        car[key] = float(value) if value.replace(".", "", 1).lstrip("-").isdigit() and "." in value else (int(value) if value.lstrip("-").isdigit() else value)
     common = {"use_sim_time": True}
     (run_dir / "run_config.json").write_text(json.dumps({
         "track": track, "motion": motion, "seed": seed, "laps": laps, "sensor_profile": sensor, "checkpoint": ckpt, "device": arg("device"),
@@ -169,7 +172,9 @@ def _setup(context, *_args, **_kwargs):  # noqa: ANN001, ANN202
     stack = [
         *tf_nodes,
         Node(package=PKG, executable="real_sensor_node", name="apex_real_sensors", output="screen",
-             parameters=[{"sensor_profile": sensor, "seed": seed, "robot_description": urdf, "truth_csv_dir": str(run_dir), **common}]),
+             parameters=[{"sensor_profile": sensor, "seed": seed, "robot_description": urdf, "truth_csv_dir": str(run_dir),
+                          "imu_offset_ms": float(arg("imu_offset_ms")), "lidar_offset_ms": float(arg("lidar_offset_ms")),
+                          "gyro_bias_z_extra": float(arg("gyro_bias_z_extra")), **common}]),
         Node(package=PKG, executable="sim_actuation_node", name="apex_sim_actuation", output="log",
              parameters=[{"esc_tau_scale": float(rs["setup"]["actuator_perturbation"].get("esc_tau_scale", 1.0)),
                           "servo_tau_scale": float(rs["setup"]["actuator_perturbation"].get("servo_tau_scale", 1.0)), **common}]),
@@ -182,7 +187,8 @@ def _setup(context, *_args, **_kwargs):  # noqa: ANN001, ANN202
         *slam,
         Node(package=PKG, executable="race_driver_node", name="apex_race_driver", output="screen",
              parameters=[{**car, "output_dir": str(run_dir / "plan"), "log_csv": str(run_dir / "driver.csv"),
-                          "events_json": str(run_dir / "race_events.json"), **common}])
+                          "events_json": str(run_dir / "race_events.json"),
+                          "inputs_csv": str(run_dir / "driver_inputs.csv"), **common}])
         if driver == "race" else
         Node(package=PKG, executable="track_driver_node", name="apex_track_driver", output="screen",
              parameters=[{"track": track, "motion": motion, "seed": seed, "laps": laps, "pose_source": drive, "start_pose": start_pose,
@@ -210,8 +216,12 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument("seed", default_value="1"),
         DeclareLaunchArgument("laps", default_value="2"),
         DeclareLaunchArgument("sensor_profile", default_value="APEX_real"),
-        DeclareLaunchArgument("checkpoint", default_value=str(sim / "learning" / "outputs" / "real2sim_v2_fast" / "hybrid_submap_v3" / "best_model.pt")),
+        DeclareLaunchArgument("checkpoint", default_value=str(sim / "learning" / "outputs" / "real2sim_v5_10hz" / "hybrid_submap_v4" / "best_model.pt")),
         DeclareLaunchArgument("device", default_value="cpu", description="cpu (~20 ms per scan) | cuda"),
+        DeclareLaunchArgument("imu_offset_ms", default_value="nan", description="stress test: IMU stamp offset [ms] (nan: per-seed draw of the profile)"),
+        DeclareLaunchArgument("lidar_offset_ms", default_value="nan", description="stress test: LiDAR stamp offset [ms] (nan: per-seed draw of the profile)"),
+        DeclareLaunchArgument("gyro_bias_z_extra", default_value="0.0", description="stress test: constant added to the published gyro z [rad/s]"),
+        DeclareLaunchArgument("driver_set", default_value="", description="race driver config overrides, space separated section.field=value (tuning)"),
         DeclareLaunchArgument("driver", default_value="race", description="race (unseen track: reactive lap 1, map, race line) | format (dataset path)"),
         DeclareLaunchArgument("w_min", default_value="1.5", description="race: generic minimum lane width the car assumes [m]"),
         DeclareLaunchArgument("v_explore", default_value="1.5", description="race: top speed of the reactive lap 1 [m/s]"),

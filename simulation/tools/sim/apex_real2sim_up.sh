@@ -24,7 +24,7 @@ MOTION="medium"
 SEED="1"
 LAPS=""
 SENSOR="APEX_real"
-CHECKPOINT="${APEX_SIM_ROOT}/learning/outputs/real2sim_v2_fast/hybrid_submap_v3/best_model.pt"
+CHECKPOINT="${APEX_SIM_ROOT}/learning/outputs/real2sim_v5_10hz/hybrid_submap_v4/best_model.pt"
 DEVICE="cpu"
 DRIVE="estimate"
 START_POSE="true"
@@ -40,6 +40,10 @@ V_EXPLORE="1.5"
 RACE_LINE="min_curvature"
 V_MAX_RACE="3.5"
 A_LAT="3.0"
+IMU_OFFSET_MS="nan"
+LIDAR_OFFSET_MS="nan"
+GYRO_BIAS_Z_EXTRA="0.0"
+DRIVER_SET=""
 SKIP_BUILD=0
 
 usage() {
@@ -53,7 +57,7 @@ Format (as in tools/pose_dataset/config/campaign.yaml):
   --laps <x>           laps to drive (default: 3 with --driver race, 2 with --driver format)
   --sensor <profile>   sensor profile of sensors.yaml (default: APEX_real; APEX_real_compat = 2 kHz A2M8)
 Estimator:
-  --checkpoint <file>  streaming / hybrid checkpoint (default: real2sim_v2_fast/hybrid_submap_v3/best_model.pt, the latest trained on APEX_real)
+  --checkpoint <file>  streaming / hybrid checkpoint (default: real2sim_v5_10hz/hybrid_submap_v4/best_model.pt, trained for the A2M8 in Express mode at 10 Hz; previous: real2sim_v3_robust/hybrid_submap_v3_real, real2sim_v2_fast/hybrid_submap_v3)
   --device <d>         cpu (default, ~20 ms per scan) | cuda
 Driver:
   --driver <d>         race (default: reactive lap 1 + map + race line) | format (dataset path)
@@ -62,6 +66,11 @@ Driver:
   --race-line <mode>   race: min_curvature (default) | centre
   --v-max-race <m/s>   race: top speed on the race line (default: 3.5)
   --a-lat <m/s2>       race: lateral acceleration limit (default: 3.0)
+  --driver-set "<k=v ...>"  race: driver config overrides, e.g. "reactive.cluster_eps_m=0.30 reactive.wall_max_lateral_m=2.1"
+Stress tests (sensor realism):
+  --imu-offset-ms <ms>     IMU stamp offset (default: per-seed draw of the profile)
+  --lidar-offset-ms <ms>   LiDAR stamp offset (default: per-seed draw of the profile)
+  --gyro-bias-z-extra <r>  constant added to the published gyro z [rad/s] (default: 0)
 Run:
   --drive <src>        format only: estimate (closed loop, default) | truth (diagnostic)
   --start-pose <s>     true (default: the path starts where the car is) | nominal (start line, placement error unknown)
@@ -91,6 +100,10 @@ while [[ $# -gt 0 ]]; do
     --race-line) RACE_LINE="$2"; shift 2 ;;
     --v-max-race) V_MAX_RACE="$2"; shift 2 ;;
     --a-lat) A_LAT="$2"; shift 2 ;;
+    --imu-offset-ms) IMU_OFFSET_MS="$2"; shift 2 ;;
+    --lidar-offset-ms) LIDAR_OFFSET_MS="$2"; shift 2 ;;
+    --gyro-bias-z-extra) GYRO_BIAS_Z_EXTRA="$2"; shift 2 ;;
+    --driver-set) DRIVER_SET="$2"; shift 2 ;;
     --start-pose) START_POSE="$2"; shift 2 ;;
     --gui) GUI="true"; shift ;;
     --no-rviz) RVIZ="false"; shift ;;
@@ -156,6 +169,7 @@ setsid ros2 launch apex_fusion_research apex_real2sim.launch.py \
   "track:=${TRACK}" "motion:=${MOTION}" "seed:=${SEED}" "laps:=${LAPS}" "sensor_profile:=${SENSOR}" \
   "checkpoint:=${CHECKPOINT}" "device:=${DEVICE}" "drive:=${DRIVE}" "start_pose:=${START_POSE}" "gui:=${GUI}" "rviz:=${RVIZ}" ${RVIZ_CONFIG:+"rviz_config:=${RVIZ_CONFIG}"} "run_dir:=${RUN_DIR}" \
   "driver:=${DRIVER}" "w_min:=${W_MIN}" "v_explore:=${V_EXPLORE}" "race_line:=${RACE_LINE}" "v_max_race:=${V_MAX_RACE}" "a_lat:=${A_LAT}" \
+  "imu_offset_ms:=${IMU_OFFSET_MS}" "lidar_offset_ms:=${LIDAR_OFFSET_MS}" "gyro_bias_z_extra:=${GYRO_BIAS_Z_EXTRA}" ${DRIVER_SET:+"driver_set:=${DRIVER_SET}"} \
   > >(tee "${RUN_DIR}/launch.log") 2>&1 &
 LAUNCH_PID=$!
 

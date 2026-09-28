@@ -52,6 +52,10 @@ from ._common import LATCHED_QOS, ConfigParameters, json_msg
 
 MAP_QOS = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
 
+# Columns of inputs_csv: the arguments of RaceDriverCore.on_scan, the travel and the phase at that call, then the ranges.
+INPUT_COLUMNS = ["stamp_ns", "now_ns", "phase", "angle_min", "angle_inc", "x_stamp", "y_stamp", "yaw_stamp", "x_now", "y_now", "yaw_now", "speed", "travel",
+                 "laser_x", "laser_y", "laser_yaw"]
+
 
 def _yaw(q) -> float:  # noqa: ANN001
     return math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
@@ -82,9 +86,11 @@ class RaceDriverNode(Node):
         dp("rate_hz", 50.0)
         dp("static_start_s", 1.5)
         dp("max_pose_age_s", 0.3)
+        dp("max_scan_age_s", 0.6)  # the last LiDAR correction of the estimator (the predicted pose only needs the IMU)
         dp("output_dir", "")
         dp("log_csv", "")
         dp("events_json", "")
+        dp("inputs_csv", "")  # lap-1 scans as the reactive driver received them (offline replay: tools/analysis/replay_reactive.py)
         dp("planner_in_process", False)  # true: plan in the node's process (debug); false: a separate process
         self.params = ConfigParameters(self, RaceDriverConfig)
         gp = lambda n: self.get_parameter(n).value  # noqa: E731
@@ -98,6 +104,8 @@ class RaceDriverNode(Node):
         self.cfg = cfg
         self.frames = {k: str(gp(f"{k}_frame")) for k in ("map", "odom", "base", "laser")}
         self.max_age = float(gp("max_pose_age_s"))
+        self.max_scan_age = float(gp("max_scan_age_s"))
+        self.scan_age_stops = 0
         self.out_dir = Path(str(gp("output_dir"))) if str(gp("output_dir")) else None
         self.events_path = Path(str(gp("events_json"))) if str(gp("events_json")) else None
         submit = None
@@ -132,6 +140,12 @@ class RaceDriverNode(Node):
             self._log_file = open(str(gp("log_csv")), "w", newline="", encoding="utf-8")
             self.log = csv.writer(self._log_file)
             self.log.writerow(LOG_COLUMNS)
+        self.inputs = None
+        if str(gp("inputs_csv")):
+            Path(str(gp("inputs_csv"))).parent.mkdir(parents=True, exist_ok=True)
+            self._inputs_file = open(str(gp("inputs_csv")), "w", newline="", encoding="utf-8")
+            self.inputs = csv.writer(self._inputs_file)
+            self.inputs.writerow(INPUT_COLUMNS)
         self.core.events["subscribed_topics"] = sorted({s.topic_name for s in self.subscriptions})
         self.get_logger().info(f"race driver: {self.core.laps} laps on an unknown track (lap 1 reactive, w_min {cfg.reactive.w_min_m} m, "
                                f"race line {cfg.planner.mode}); subscribed to {self.core.events['subscribed_topics']}")
@@ -189,9 +203,14 @@ class RaceDriverNode(Node):
                 pose = (tf.transform.translation.x, tf.transform.translation.y, _yaw(tf.transform.rotation))
             except TransformException:
                 return
-        now = self._pose_now(self._now())
+        t_now = self._now()
+        now = self._pose_now(t_now)
         if now is None:
             return
+        if self.inputs is not None and self.core.phase in ("wait", "explore", "closing"):
+            vals = (*pose, *now[0], now[1], self.core.travel, *self.base_to_laser)
+            self.inputs.writerow([stamp, t_now, self.core.phase, f"{m.angle_min:.9f}", f"{m.angle_increment:.9f}", *(f"{v:.6f}" for v in vals),
+                                  *(f"{r:.4f}" for r in m.ranges)])
         self.core.on_scan(stamp * 1e-9, np.asarray(m.ranges, dtype=float), float(m.angle_min), float(m.angle_increment), pose, now[0], now[1])
         if self.core.local_path_odom is not None:
             self._publish_path(self.local_pub, self.core.local_path_odom, self.frames["odom"])
@@ -216,11 +235,21 @@ class RaceDriverNode(Node):
         except TransformException:
             return None
 
+    def _scan_age(self, now: int) -> float:
+        """Age [s] of the last estimate corrected by a LiDAR scan (inf before the first)."""
+        return (now - max(self.poses)) * 1e-9 if self.poses else math.inf
+
     def _control(self) -> None:
         now = self._now()
         pose = self._pose_now(now)
         if pose is None or (pose[2] > self.max_age and self.core.phase not in ("wait",)):
             self._publish_cmd(0.0, 0.0)  # no fresh pose: stop, like the APEX tracker
+            return
+        if self.core.phase not in ("wait",) and self._scan_age(now) > self.max_scan_age:
+            # The IMU keeps the predicted pose fresh, but without LiDAR corrections it
+            # drifts: an estimator that stalled or lost the LiDAR must stop the car too.
+            self.scan_age_stops += 1
+            self._publish_cmd(0.0, 0.0)
             return
         v, steer, row = self.core.control(now * 1e-9, pose[0], pose[1], self._map_odom(), self.ready, pose[2])
         self._publish_cmd(v, self.core.steer_command(steer))
@@ -271,17 +300,20 @@ class RaceDriverNode(Node):
         if self.events_path is None:
             return
         ev = {k: v for k, v in self.core.events.items() if k != "config"}
+        ev["scan_age_stops"] = getattr(self, "scan_age_stops", 0)  # control ticks stopped by max_scan_age_s
         ev["config"] = self.core.events.get("config")
         self.events_path.parent.mkdir(parents=True, exist_ok=True)
         self.events_path.write_text(json.dumps(ev, indent=1, default=float), encoding="utf-8")
 
     def _publish_status(self) -> None:
-        self.status_pub.publish(json_msg(self.core.status()))
+        self.status_pub.publish(json_msg({**self.core.status(), "scan_age_stops": self.scan_age_stops}))
 
     def destroy_node(self) -> None:
         self._write_events()
         if self.log is not None:
             self._log_file.close()
+        if self.inputs is not None:
+            self._inputs_file.close()
         if self.pool is not None:
             self.pool.shutdown(wait=False, cancel_futures=True)
         super().destroy_node()
