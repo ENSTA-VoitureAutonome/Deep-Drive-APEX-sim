@@ -389,6 +389,15 @@ Gazebo physics (car with suspension) -> gpu_lidar capture (26 Hz x 1440 rays) ->
 | Timing | Stamp = first sample of the revolution / sampling instant; publication 3 ms / 2 ms later | how the hardware works (the defects of today's car software are documented in `real_vehicle/docs/sensor_timing_requirements.md` and not modelled) |
 | Body | Physical suspension (xacro `suspension:=true`): 3.1°/g roll, 2.1°/g pitch, 3.5 Hz, ζ 0.49; the sensors ride on the sprung body at the true mounts drawn per trajectory | `vehicle.yaml` targets, checked by `suspension_check.py` / `tests/test_suspension.py` |
 
+The v2 dataset was generated with the values above. The `APEX_real` profile has since been widened for robustness (v3), and new runs and the live simulation use it:
+- datasheet gyro turn-on bias;
+- `imu.thermal` warm-up drift;
+- stamp offsets drawn per power-up (`timestamp.offset_std_ms`);
+- reception jitter;
+- IMU and revolution losses.
+
+The table with provenance is in `learning/lidar_imu_pose/README.md` §7. The stored v2 runs are perturbed to match at training time (`robustness.py`), not regenerated.
+
 **What Gazebo does and what the layer adds.**
 - **Gazebo:** geometry and physics, plus the IMU white noise, turn-on bias and Gauss-Markov bias (native SDF noise, seeded per trajectory).
 - **`imu_chip`:** vibration, the chip filter, the exact output rate with its clock error, scale, misalignment, g-sensitivity, quantization and saturation.
@@ -428,6 +437,31 @@ python3 tools/generate_pose_dataset.py --preset full_v2 --database data/multisce
 - **Rolling emulation:** reconstructed from 26 Hz snapshots.
 - **Vibration and chip filter:** modelled, not physical.
 - **Speed calibration:** the maximum stable speeds were measured on the rigid car.
+
+### Dataset v3: the A2M8 at 4 kHz with the widened realism
+
+**Preset `full_v3`:** the `full_v2` tracks, motions and seeds with the v3 `APEX_real` profile.
+
+- **LiDAR:** the A2M8 in Express scan, 4000 samples/s, which every A2M8 firmware supports; base dropout 0.12, as measured in the standard mode.
+- **Realism:** datasheet gyro turn-on bias, warm-up drift (`imu.thermal`), per-power-up stamp offsets, reception jitter, and IMU and revolution losses.
+- **Other profiles:** the 8 kHz Sensitivity profile of v2 is kept as `APEX_real_sensitivity`, and the 2 kHz one stays as `APEX_real_compat`.
+- **Why:** `learning/lidar_imu_pose/README.md` §7–8.
+
+```bash
+python3 tools/generate_pose_dataset.py --preset full_v3 --database data/multiscenario_pose/pose_dataset_v3.sqlite3 --workers 6
+```
+
+- **Result:** 263 runs (195 train, 34 validation, 34 test), 0 failures, all QA checks passed. Validation has ~195 one-degree bins with a return per revolution, against ~252 in v2.
+- **Wall time:** ~2.3 h with 6 workers.
+- **QA change (`qa.py`, `timestamps_match_ground_truth`):** a stamp is now checked as a constant offset (the median, within 5σ of `offset_std_ms`) plus jitter (within 7σ). The previous check added both into one bound, so it rejected every run with a per-power-up offset.
+
+### Dataset v4: the A2M8 at 10 Hz
+
+**Preset `full_v4`:** the `full_v3` tracks, motions, seeds and realism with `APEX_real` turning at 10 Hz. With the Express scan that is 400 samples per revolution, against ~307 at 13 Hz.
+
+- **Why:** `learning/lidar_imu_pose/README.md` §9.
+- **Result:** 263 runs, all QA checks passed, 1.1 GB, ~2.3 h with 6 workers.
+- **Density:** 100 ms revolutions and ~230–250 one-degree bins with a return per revolution, against ~194 in v3.
 
 ## 14. Files
 

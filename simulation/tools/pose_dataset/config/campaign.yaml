@@ -94,6 +94,41 @@ presets:
       - {split: test, tracks: [test_unseen], motions: *all_motions, sensors: [APEX_real], seeds: [1, 2, 3, 4, 5]}
       - {split: test, tracks: [test_unseen], motions: [slow, slow_variable, slow_stop_and_go], sensors: [APEX_real], seeds: [1, 2, 3], laps: 1.0}
 
+  full_v3:
+    role: main
+    sensor_backend: gazebo_native
+    description: >-
+      Dataset v3: the full_v2 tracks, motions and seeds with the v3 APEX_real
+      profile: the A2M8 in Express scan (4 kHz, supported by every firmware)
+      and the widened realism (datasheet gyro bias, warm-up drift, stamp
+      offsets and jitter, IMU and revolution losses). Write it to its own
+      database, e.g. data/multiscenario_pose/pose_dataset_v3.sqlite3.
+      Generated when APEX_real turned at 13.03 Hz (now APEX_real_express13).
+    laps: 2.0
+    groups:
+      - {split: train, tracks: *train_tracks, motions: *all_motions, sensors: [APEX_real], seeds: [1, 2, 3, 4, 5, 6]}
+      - {split: train, tracks: *train_tracks, motions: [slow, slow_variable, slow_stop_and_go], sensors: [APEX_real], seeds: [1, 2, 3], laps: 1.0}
+      - {split: validation, tracks: [val_mixed], motions: *all_motions, sensors: [APEX_real], seeds: [1, 2, 3, 4, 5]}
+      - {split: validation, tracks: [val_mixed], motions: [slow, slow_variable, slow_stop_and_go], sensors: [APEX_real], seeds: [1, 2, 3], laps: 1.0}
+      - {split: test, tracks: [test_unseen], motions: *all_motions, sensors: [APEX_real], seeds: [1, 2, 3, 4, 5]}
+      - {split: test, tracks: [test_unseen], motions: [slow, slow_variable, slow_stop_and_go], sensors: [APEX_real], seeds: [1, 2, 3], laps: 1.0}
+
+  full_v4:
+    role: main
+    sensor_backend: gazebo_native
+    description: >-
+      Dataset v4: the full_v3 tracks, motions, seeds and realism with the A2M8
+      in Express scan at 10 Hz (APEX_real): 400 samples per revolution. Write
+      it to its own database, e.g. data/multiscenario_pose/pose_dataset_v4.sqlite3.
+    laps: 2.0
+    groups:
+      - {split: train, tracks: *train_tracks, motions: *all_motions, sensors: [APEX_real], seeds: [1, 2, 3, 4, 5, 6]}
+      - {split: train, tracks: *train_tracks, motions: [slow, slow_variable, slow_stop_and_go], sensors: [APEX_real], seeds: [1, 2, 3], laps: 1.0}
+      - {split: validation, tracks: [val_mixed], motions: *all_motions, sensors: [APEX_real], seeds: [1, 2, 3, 4, 5]}
+      - {split: validation, tracks: [val_mixed], motions: [slow, slow_variable, slow_stop_and_go], sensors: [APEX_real], seeds: [1, 2, 3], laps: 1.0}
+      - {split: test, tracks: [test_unseen], motions: *all_motions, sensors: [APEX_real], seeds: [1, 2, 3, 4, 5]}
+      - {split: test, tracks: [test_unseen], motions: [slow, slow_variable, slow_stop_and_go], sensors: [APEX_real], seeds: [1, 2, 3], laps: 1.0}
+
   zeroshot:
     role: zeroshot
     description: >-

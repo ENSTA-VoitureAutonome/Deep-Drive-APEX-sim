@@ -42,6 +42,7 @@ import math
 
 import numpy as np
 
+from .imu_chip import timestamp_offset_ms
 from .lidar_noise import LidarNoiseConfig, LidarNoiseModel
 
 TWO_PI = 2.0 * math.pi
@@ -296,7 +297,7 @@ def rolling_config_from_profile(lidar: dict, seed: int) -> RollingLidarConfig:
         binning=str(lidar.get("binning", "nearest")),
         occluded_sectors_deg=tuple(tuple(float(v) for v in s) for s in lidar.get("occluded_sectors_deg", [])),
         range_min=float(lidar["range_min_m"]), range_max=float(lidar["range_max_m"]),
-        timestamp_offset_ms=float(ts.get("offset_ms", 0.0)), timestamp_jitter_std_ms=float(ts.get("jitter_std_ms", 0.0)),
+        timestamp_offset_ms=timestamp_offset_ms(ts, seed, 0x0FF2), timestamp_jitter_std_ms=float(ts.get("jitter_std_ms", 0.0)),
         publish_latency_ms=float(lidar.get("publish_latency_ms", 0.0)),
         scan_dropout_prob=float(lidar.get("scan_dropout_prob", 0.0)), noise=noise, seed=int(seed),
     )

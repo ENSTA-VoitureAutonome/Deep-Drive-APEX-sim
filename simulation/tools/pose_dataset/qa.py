@@ -95,13 +95,21 @@ def run_qa(synth: dict[str, Any], physics: dict[str, Any], nominal_imu_hz: float
         imu_stamp_error_ms_mean=float(lat_i.mean() * 1e-6), imu_stamp_error_ms_std=float(lat_i.std() * 1e-6),
         lidar_stamp_error_ms_mean=float(lat_l.mean() * 1e-6), lidar_stamp_error_ms_std=float(lat_l.std() * 1e-6),
     )
-    tol_i = (abs(float(ts_cfg_i.get("offset_ms", 0))) + 7 * float(ts_cfg_i.get("jitter_std_ms", 0)) + 0.01) * 1e6
-    if synth["profile"].get("backend") == "gazebo_native":
-        # Exact sampling instants of the chip clock: the ground-truth row is
-        # the nearest physics step, up to half a step away.
-        tol_i += 0.5 * step
-    tol_l = (abs(float(ts_cfg_l.get("offset_ms", 0))) + 7 * float(ts_cfg_l.get("jitter_std_ms", 0)) + 0.01) * 1e6
-    checks["timestamps_match_ground_truth"] = bool(np.all(np.abs(lat_i) <= tol_i)) and bool(np.all(np.abs(lat_l) <= tol_l))
+    # A stamp is the true instant + a constant offset (``offset_ms``, plus a
+    # per-power-up draw of std ``offset_std_ms``) + jitter: the constant part
+    # (median) is checked against the offset, the rest against the jitter.
+    def _stamps_ok(lat: np.ndarray, ts: dict, extra_ns: float) -> bool:
+        if not len(lat):
+            return True
+        const = float(np.median(lat))
+        off_tol = (abs(float(ts.get("offset_ms", 0))) + 5 * float(ts.get("offset_std_ms", 0)) + 0.01) * 1e6 + extra_ns
+        jit_tol = (7 * float(ts.get("jitter_std_ms", 0)) + 0.01) * 1e6 + extra_ns
+        return abs(const) <= off_tol and bool(np.all(np.abs(lat - const) <= jit_tol))
+
+    # Exact sampling instants of the chip clock (native backend): the
+    # ground-truth row is the nearest physics step, up to half a step away.
+    native_i = 0.5 * step if synth["profile"].get("backend") == "gazebo_native" else 0.0
+    checks["timestamps_match_ground_truth"] = _stamps_ok(lat_i, ts_cfg_i, native_i) and _stamps_ok(lat_l, ts_cfg_l, 0.0)
 
     speed = np.linalg.norm(gt["v_world"][:, :2], axis=1)
     acc_h = np.linalg.norm(gt["a_world"][:, :2], axis=1)

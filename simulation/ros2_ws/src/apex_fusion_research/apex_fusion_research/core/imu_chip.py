@@ -15,12 +15,15 @@ cannot, is applied here, in the order of the physical signal chain:
 3. sampling at the output data rate with the chip's own oscillator (constant
    frequency error, random phase): sample instants are exact, not rounded to
    the 1 ms physics grid (linear interpolation of the filtered 1 kHz signal);
-4. the error terms without a Gazebo equivalent (``imu_error.TriadErrorModel``
+4. the thermal bias drift of the warm-up (per-axis coefficient times the
+   temperature rise of the board, first-order towards its final value; the
+   run starts at a random point of the warm-up);
+5. the error terms without a Gazebo equivalent (``imu_error.TriadErrorModel``
    with noise and bias disabled): scale factor, misalignment, g-sensitivity,
    bias random walk, quantization and saturation;
-5. timestamps (sampling instant + offset + jitter, strictly increasing) and
+6. timestamps (sampling instant + offset + jitter, strictly increasing) and
    the time at which the sample reaches the host (publication latency);
-6. optional dropouts.
+7. optional dropouts.
 
 Streaming: :meth:`ImuChip.push` takes any number of consecutive 1 kHz samples
 and returns the output samples completed so far, so the same code runs inside
@@ -64,6 +67,23 @@ class VibrationConfig:
 
 
 @dataclass
+class ThermalConfig:
+    """Bias drift during the warm-up: bias(t) = coeff * rise * (1 - exp(-t / tau)),
+    t since power-up; coeff drawn per axis, rise, tau and the elapsed part of
+    the warm-up at the first sample drawn per run."""
+
+    gyro_coeff_std: float = 0.0  # rad/s per degC
+    accel_coeff_std: float = 0.0  # m/s^2 per degC
+    rise_c: tuple[float, float] = (10.0, 25.0)  # final temperature rise [degC], uniform range
+    tau_s: tuple[float, float] = (300.0, 900.0)  # warm-up time constant, uniform range
+    start_frac: tuple[float, float] = (0.0, 1.0)  # fraction of the rise already reached at the first sample
+
+    @property
+    def enabled(self) -> bool:
+        return self.gyro_coeff_std > 0.0 or self.accel_coeff_std > 0.0
+
+
+@dataclass
 class ImuChipConfig:
     odr_hz: float = 104.0
     clock_ppm_std: float = 0.0
@@ -79,6 +99,7 @@ class ImuChipConfig:
     gyro: TriadErrorConfig = field(default_factory=TriadErrorConfig)  # layer-only terms
     accel: TriadErrorConfig = field(default_factory=TriadErrorConfig)
     vibration: VibrationConfig = field(default_factory=VibrationConfig)
+    thermal: ThermalConfig = field(default_factory=ThermalConfig)
     bias_label_window_s: float = 1.0
     seed: int = 0
 
@@ -140,6 +161,15 @@ class ImuChip:
         self._lp_a = _Sos(signal.butter(2, cfg.dlpf_accel_hz, fs=fs, output="sos"), 3) if 0.0 < cfg.dlpf_accel_hz < 0.5 * fs else None
         self._lp_eg = _Sos(signal.butter(2, cfg.dlpf_gyro_hz, fs=fs, output="sos"), 3) if self._lp_g is not None else None
         self._lp_ea = _Sos(signal.butter(2, cfg.dlpf_accel_hz, fs=fs, output="sos"), 3) if self._lp_a is not None else None
+        # Thermal drift (own stream: the other draws do not change when it is enabled).
+        th = cfg.thermal
+        rng_th = np.random.default_rng(np.random.SeedSequence((int(cfg.seed), 0x7E1)))
+        self.thermal_coeff = np.concatenate((rng_th.normal(0.0, th.gyro_coeff_std, 3), rng_th.normal(0.0, th.accel_coeff_std, 3)))
+        self.thermal_rise_c = float(rng_th.uniform(*th.rise_c))
+        self.thermal_tau_s = float(rng_th.uniform(*th.tau_s))
+        frac = min(float(rng_th.uniform(*th.start_frac)), 0.999)
+        self.thermal_t0_s = -self.thermal_tau_s * math.log1p(-frac)  # time since power-up at the first sample
+        self._t_first: float | None = None
         # Output clock: constant frequency error, random phase (set at the first push).
         self.period_s = (1.0 / cfg.odr_hz) * (1.0 + self._rng_clock.normal(0.0, cfg.clock_ppm_std) * 1e-6)
         self._next_t: float | None = None
@@ -176,6 +206,7 @@ class ImuChip:
         t = t_ns.astype(np.float64) * 1e-9
         if self._next_t is None:
             self._next_t = t[0] + float(self._rng_clock.uniform(0.0, self.period_s))
+            self._t_first = float(t[0])
         out: list[ImuOutput] = []
         prev_t, prev_x, prev_e = self._last if self._last is not None else (t[0], filt[0], None if err is None else err[0])
         ts = np.concatenate(([prev_t], t))
@@ -219,11 +250,19 @@ class ImuChip:
         self._bias_avg = out[-1].copy()
         return out
 
+    def thermal_bias(self, t_s: float) -> np.ndarray:
+        """Thermal bias [gyro rad/s x3, accel m/s^2 x3] at simulation time ``t_s``."""
+        if not self.cfg.thermal.enabled or self._t_first is None:
+            return np.zeros(6)
+        since_power_up = self.thermal_t0_s + max(0.0, t_s - self._t_first)
+        return self.thermal_coeff * self.thermal_rise_c * (1.0 - math.exp(-since_power_up / self.thermal_tau_s))
+
     def _chip_sample(self, tk: float, val: np.ndarray, err: np.ndarray | None) -> ImuOutput | None:
         cfg = self.cfg
         dt = self.period_s
-        gyro = self.gyro_err.measure(val[:3], dt, specific_force=val[3:])
-        accel = self.accel_err.measure(val[3:], dt)
+        th = self.thermal_bias(tk)
+        gyro = self.gyro_err.measure(val[:3] + th[:3], dt, specific_force=val[3:])
+        accel = self.accel_err.measure(val[3:] + th[3:], dt)
         # Dropouts: isolated samples and bursts (bus hiccups).
         rng = self._rng_stamp
         drop = False
@@ -249,12 +288,16 @@ class ImuChip:
         self.samples_out += 1
         bias_g = bias_a = None
         if err is not None:
-            bias_g = err[:3] + self.gyro_err.bias
-            bias_a = err[3:] + self.accel_err.bias
+            bias_g = err[:3] + self.gyro_err.bias + th[:3]
+            bias_a = err[3:] + self.accel_err.bias + th[3:]
         return ImuOutput(t_true_ns, stamp, release, gyro, accel, bias_g, bias_a)
 
     def realization(self) -> dict:
-        return {"period_s": self.period_s, "gyro": self.gyro_err.realization(), "accel": self.accel_err.realization()}
+        out = {"period_s": self.period_s, "gyro": self.gyro_err.realization(), "accel": self.accel_err.realization(),
+               "timestamp_offset_ms": self.cfg.timestamp_offset_ms}
+        if self.cfg.thermal.enabled:
+            out["thermal"] = {"coeff": self.thermal_coeff.tolist(), "rise_c": self.thermal_rise_c, "tau_s": self.thermal_tau_s, "t0_s": self.thermal_t0_s}
+        return out
 
 
 # ------------------------------------------------------------- profile glue
@@ -284,6 +327,14 @@ def gazebo_noise_from_profile(imu: dict, native_rate_hz: float = 1000.0) -> dict
         out[f"{triad}_dynamic_bias_std"] = axes(src.get("bias_instability_std", 0.0))
         out[f"{triad}_dynamic_bias_tau"] = axes(src.get("bias_correlation_time_s", 100.0))
     return out
+
+
+def timestamp_offset_ms(ts: dict, seed: int, stream: int) -> float:
+    """Constant stamp offset of one power-up: ``offset_ms`` plus a per-run draw
+    of std ``offset_std_ms`` (own random stream, reproducible from the seed)."""
+    std = float(ts.get("offset_std_ms", 0.0))
+    extra = float(np.random.default_rng(np.random.SeedSequence((int(seed), stream))).normal(0.0, std)) if std > 0.0 else 0.0
+    return float(ts.get("offset_ms", 0.0)) + extra
 
 
 def chip_config_from_profile(imu: dict, vibration: dict | None, seed: int, native_rate_hz: float = 1000.0) -> ImuChipConfig:
@@ -318,12 +369,18 @@ def chip_config_from_profile(imu: dict, vibration: dict | None, seed: int, nativ
             wheel_harmonic_mps2=float(vibration.get("wheel_harmonic_mps2", 0.0)),
             gain=float(imu.get("vibration_gain", 1.0)),
         )
+    th = imu.get("thermal", {})
+    thermal = ThermalConfig(
+        gyro_coeff_std=float(th.get("gyro_coeff_std", 0.0)), accel_coeff_std=float(th.get("accel_coeff_std", 0.0)),
+        rise_c=tuple(float(v) for v in th.get("rise_c", (10.0, 25.0))), tau_s=tuple(float(v) for v in th.get("tau_s", (300.0, 900.0))),
+        start_frac=tuple(float(v) for v in th.get("start_frac", (0.0, 1.0))),
+    )
     return ImuChipConfig(
         odr_hz=float(imu["rate_hz"]), clock_ppm_std=float(imu.get("clock_ppm_std", 0.0)), native_rate_hz=native_rate_hz,
         dlpf_gyro_hz=g_hz, dlpf_accel_hz=a_hz,
-        timestamp_offset_ms=float(ts.get("offset_ms", 0.0)), timestamp_jitter_std_ms=float(ts.get("jitter_std_ms", 0.0)),
+        timestamp_offset_ms=timestamp_offset_ms(ts, seed, 0x0FF1), timestamp_jitter_std_ms=float(ts.get("jitter_std_ms", 0.0)),
         publish_latency_ms=float(imu.get("publish_latency_ms", 0.0)),
         dropout_prob=float(imu.get("dropout_prob", 0.0)), dropout_burst_prob=float(imu.get("dropout_burst_prob", 0.0)),
         dropout_burst_len=tuple(int(x) for x in imu.get("dropout_burst_len", (2, 4))),
-        gyro=triad("gyro"), accel=triad("accel"), vibration=vib, seed=int(seed),
+        gyro=triad("gyro"), accel=triad("accel"), vibration=vib, thermal=thermal, seed=int(seed),
     )

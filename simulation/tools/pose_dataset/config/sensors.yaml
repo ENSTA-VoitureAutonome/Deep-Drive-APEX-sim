@@ -231,18 +231,32 @@ profiles:
   #   [real-id]   tools/analysis/real_sensor_identification.py on
   #               real_vehicle/data (22 LiDAR and 2 IMU recordings)
   #   [assump]    assumption, see README
+  #   [robust]    widened for robustness (v3): datasheet bounds instead of the
+  #               two real IMU recordings, per power-up stamp offsets, host
+  #               reception jitter and occasional USB / serial losses
   # Timing defects of the current car software (IMU at 55.6 Hz, stamps on
   # reception, 2 kHz compatible protocol) are NOT modelled; they are listed in
-  # real_vehicle/docs/sensor_timing_requirements.md.
+  # real_vehicle/docs/sensor_timing_requirements.md. The training of the v3
+  # hybrid also sees IMU rates of 52 Hz (learning/lidar_imu_pose/config/robust_real.yaml).
   APEX_real:
     backend: gazebo_native
     hardware: APEX                   # physical sensor set; runs of one trajectory with the same hardware share it
-    description: APEX car hardware - RPLIDAR A2M8 in Sensitivity mode (8 kHz, 13 Hz) and LSM6DS3 at 104 Hz, correct timing.
+    description: APEX car hardware - RPLIDAR A2M8 in Express scan (4 kHz) at 10 Hz and LSM6DS3 at 104 Hz, correct timing.
     lidar:
       model: RPLIDAR A2M8
-      rate_hz: 13.03                 # [real-id] dominant revolution period 76.7 ms
+      # Design target: 10 Hz (600 rpm), the A2M8 typical rate [ds-a2m8] and the
+      # motor speed rplidar_ros sets for the A series; with the Express scan that
+      # is 400 samples per revolution, one or more per 1-degree bin (at 13 Hz only
+      # ~307: the reactive driver and SLAM lost walls). Today's python driver
+      # turns at 13.03 Hz [real-id]: APEX_real_express13 / APEX_real_compat.
+      rate_hz: 10.0
       rate_jitter_rel: 0.01          # [assump] open-loop motor PWM
-      sample_rate_hz: 8000.0         # [ds-a2m8] high-speed protocol (Sensitivity mode, firmware >= 1.24; 4000 with older firmware: check on the car)
+      # Design target: Express scan, 4000 samples/s, which every A2M8 supports
+      # (datasheet v1.0 2017: 4000 typical with the high-speed protocol; SDK
+      # express scan from firmware 1.17). 8000 (Sensitivity) needs firmware
+      # >= 1.24 and is not assumed: APEX_real_sensitivity. 2000 = compatible
+      # protocol of today's python driver: APEX_real_compat.
+      sample_rate_hz: 4000.0         # [ds-a2m8]
       scan_direction: cw             # [ds-a2m8] + [code]
       scan_start_angle_deg: 89.0     # [code] device 0 deg -> 180 - (0 + 91)
       binning: min_range             # [code]
@@ -253,9 +267,9 @@ profiles:
       range_min_m: 0.15              # [ds-a2m8]
       range_max_m: 12.0              # [ds-a2m8] + [code]
       rolling_scan: true
-      timestamp: {offset_ms: 0.0, jitter_std_ms: 0.5}   # stamp = first sample of the revolution
+      timestamp: {offset_ms: 0.0, offset_std_ms: 3.0, jitter_std_ms: 1.0}   # stamp = first sample of the revolution; [robust] offset per power-up, host jitter
       publish_latency_ms: 3.0        # [assump] serial transfer of the last packet
-      scan_dropout_prob: 0.0
+      scan_dropout_prob: 0.01        # [robust] lost revolution (serial hiccup)
       gazebo: {capture_rate_hz: 26.0, capture_samples: 1440, capture_range_min_m: 0.05}
       noise:
         # [real-id] static bins, after removing the range spread across each
@@ -268,7 +282,7 @@ profiles:
         range_bias_std_m: 0.005
         range_scale_std: 0.002
         angle_jitter_std_rad: 0.0035
-        dropout_prob_base: 0.03      # [assump] Sensitivity mode keeps dark surfaces
+        dropout_prob_base: 0.12      # [real-id] as measured in the standard (2 kHz) mode: 0.37 hit fraction per bin vs 0.43 geometric; the Express scan has no extra sensitivity
         dropout_prob_range_coeff: 0.1
         grazing_angle_deg: 75.0
         dropout_prob_grazing: 0.3
@@ -283,34 +297,64 @@ profiles:
       rate_hz: 104.0                 # [ds-lsm] + [code] ODR
       clock_ppm_std: 5000.0          # [assump] internal oscillator
       dlpf: {gyro_hz: 33.0, accel_hz: 50.0}   # accel [ds-lsm] Table 48; gyro [assump] LPF1 at 104 Hz
-      timestamp: {offset_ms: 0.0, jitter_std_ms: 0.05}   # stamp = sampling instant (data-ready)
+      timestamp: {offset_ms: 0.0, offset_std_ms: 3.0, jitter_std_ms: 0.5}   # stamp = sampling instant (data-ready); [robust] offset per power-up, host jitter
       publish_latency_ms: 2.0        # [assump] USB CDC line
-      dropout_prob: 0.0
-      dropout_burst_prob: 0.0
-      dropout_burst_len: [2, 2]
+      dropout_prob: 0.005            # [robust] isolated USB CDC losses
+      dropout_burst_prob: 0.001      # [robust] bus hiccups
+      dropout_burst_len: [2, 4]
       vibration_gain: 1.0
       gazebo_noise:
         # Installed noise [real-id] (rest std at the output) converted to a
         # white density through the chip filter bandwidth; above the datasheet
         # floor (7 mdps/rtHz, 90 ug/rtHz) because the car adds electrical and
         # servo noise.
-        gyro: {noise_density: [3.1e-4, 6.4e-4, 2.8e-4], turn_on_bias_std: [0.06, 0.08, 0.05], bias_instability_std: 5.0e-4, bias_correlation_time_s: 200.0}
+        # Turn-on bias [robust]: zero-rate level +-10 dps [ds-lsm] taken as 2.5 sigma
+        # (0.07 rad/s); y raised to cover the real 0.103 rad/s [real-id].
+        gyro: {noise_density: [3.1e-4, 6.4e-4, 2.8e-4], turn_on_bias_std: [0.07, 0.10, 0.07], bias_instability_std: 5.0e-4, bias_correlation_time_s: 200.0}
         accel: {noise_density: [1.0e-2, 1.4e-2, 1.3e-2], turn_on_bias_std: [0.3, 0.3, 0.3], bias_instability_std: 5.0e-3, bias_correlation_time_s: 200.0}
       error:
         # Terms applied by imu_chip (Gazebo has no equivalent).
         gyro: {scale_factor_std: 0.01, misalignment_std_rad: 0.01, g_sensitivity_std: 1.0e-4, full_scale: 34.907, adc_bits: 16}
         accel: {scale_factor_std: 0.01, misalignment_std_rad: 0.01, full_scale: 39.227, adc_bits: 16}
+      # Warm-up drift [ds-lsm]: zero-rate change 0.05 dps/degC, zero-g change
+      # 0.5 mg/degC (typical values taken as 1 sigma per axis); board rise and
+      # time constant [assump] (Nano 33 IoT next to the motor driver).
+      thermal: {gyro_coeff_std: 8.727e-4, accel_coeff_std: 4.903e-3, rise_c: [10.0, 25.0], tau_s: [300.0, 900.0], start_frac: [0.0, 1.0]}
       extrinsic: {xyz: [0.02, 0.0, 0.08], rpy_deg: [0.0, 0.0, 0.0]}   # URDF mount of the real car
-      extrinsic_error: {xyz_std_m: 0.003, rpy_std_deg: 1.5}           # [real-id] ~2 deg accel offset at rest
+      extrinsic_error: {xyz_std_m: 0.003, rpy_std_deg: 2.0}           # [real-id] 3.1 deg apparent tilt at rest (bias + mount) [robust]
 
   APEX_real_compat:
     backend: gazebo_native
     description: Same hardware with the A2M8 in the 2 kHz compatible protocol (sparse 1-degree bins), as the python rplidar driver runs it today.
     inherit: APEX_real
     lidar:
+      rate_hz: 13.03                 # [real-id] today's python driver
       sample_rate_hz: 2000.0         # [ds-a2m8] compatible protocol
+
+  APEX_real_express13:
+    backend: gazebo_native
+    description: Same hardware with the A2M8 in Express scan (4 kHz) at 13.03 Hz, the APEX_real of dataset v3 and of the v4 hybrid.
+    inherit: APEX_real
+    lidar:
+      rate_hz: 13.03                 # [real-id]
+
+  APEX_real_lowdrop_diag:
+    backend: gazebo_native
+    description: DIAGNOSTIC ONLY - APEX_real (Express 4 kHz, 10 Hz) with the 3 % missing-return rate of the Sensitivity mode, to isolate the effect of dropouts on the reactive driver.
+    inherit: APEX_real
+    lidar:
       noise:
-        dropout_prob_base: 0.12      # [real-id] 0.37 hit fraction per bin vs 0.43 geometric maximum
+        dropout_prob_base: 0.03
+
+  APEX_real_sensitivity:
+    backend: gazebo_native
+    description: Same hardware with the A2M8 in Sensitivity mode (8 kHz, firmware >= 1.24), the design target of dataset v2 and of the v2 / v3-robust models.
+    inherit: APEX_real
+    lidar:
+      rate_hz: 13.03                 # [real-id]
+      sample_rate_hz: 8000.0         # [ds-a2m8] Sensitivity mode
+      noise:
+        dropout_prob_base: 0.03      # [assump] Sensitivity mode keeps dark surfaces
 
   ZS_D_dense_270:
     held_out: true
