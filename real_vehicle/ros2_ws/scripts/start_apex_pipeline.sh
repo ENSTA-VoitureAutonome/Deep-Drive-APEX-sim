@@ -433,7 +433,8 @@ python3 -m apex_telemetry.perception.rplidar_publisher_node \
   --ros-args \
   --params-file "${PARAMS_FILE}" \
   -p "port:=${APEX_LIDAR_PORT:-/dev/ttyUSB0}" \
-  -p "baudrate:=${APEX_LIDAR_BAUDRATE:-115200}" &
+  -p "baudrate:=${APEX_LIDAR_BAUDRATE:-115200}" \
+  -p "source_backend:=${APEX_LIDAR_BACKEND:-rplidar_express}" &
 track_pid "RPLidar publisher" "$!"
 if [[ "${STAGGERED_STARTUP}" == "1" ]]; then
   echo "[APEX] Startup staging: waiting ${LIDAR_STARTUP_SETTLE_S}s for LiDAR motor spin-up"

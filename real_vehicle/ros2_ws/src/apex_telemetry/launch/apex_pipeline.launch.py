@@ -177,7 +177,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("enable_kinematics_odometry", default_value="true"),
             DeclareLaunchArgument("imu_transport_backend", default_value="serial"),
             DeclareLaunchArgument("sim_imu_topic", default_value="/apex/sim/imu"),
-            DeclareLaunchArgument("lidar_source_backend", default_value="rplidar"),
+            DeclareLaunchArgument("lidar_source_backend", default_value="rplidar_express"),
             DeclareLaunchArgument("sim_scan_topic", default_value="/apex/sim/scan"),
             DeclareLaunchArgument("actuation_backend", default_value="sysfs_pwm"),
             DeclareLaunchArgument("sim_motor_pwm_topic", default_value="/apex/sim/pwm/motor_dc"),

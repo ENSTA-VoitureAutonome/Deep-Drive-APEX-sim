@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
-"""Read Arduino Nano IMU stream from serial and publish ROS2 messages."""
+"""Read Arduino Nano IMU stream from serial and publish ROS2 messages.
+
+Stamps. Firmware v2 (``arduino/nano33_iot_accel_stream``) sends every chip
+sample with the ``micros()`` of its data-ready instant; this node maps that
+MCU clock to ROS time through the lower envelope of the reception latency
+(``apex_telemetry.timing.DeviceClockMapper``), so each ``Imu`` is stamped at
+the instant the chip produced the sample, without the USB and scheduling
+jitter. That is the timing the learned odometry was trained with
+(``real_vehicle/docs/sensor_timing_requirements.md``). Lines without the MCU
+time (firmware v1) are stamped on reception, with a warning.
+"""
 
 from __future__ import annotations
 
@@ -7,15 +17,18 @@ from collections import deque
 from dataclasses import dataclass
 import math
 import random
-import re
 import threading
 import time
-from typing import Optional, Tuple
+from typing import Optional
 
 import rclpy
 from geometry_msgs.msg import Vector3Stamped
 from rclpy.node import Node
+from rclpy.time import Time as RosTime
 from sensor_msgs.msg import Imu
+
+from ..timing import CounterUnwrapper, DeviceClockMapper
+from .imu_line import ImuLine, parse_imu_line
 
 try:
     import serial
@@ -57,6 +70,12 @@ class NanoAccelSerialNode(Node):
         self.declare_parameter("imu_topic", "/apex/imu/data_raw")
         self.declare_parameter("publish_imu_topic", True)
         self.declare_parameter("allow_legacy_3axis_lines", False)
+        # Stamp every sample at its MCU data-ready time (firmware v2); False
+        # stamps on reception as v1 did.
+        self.declare_parameter("use_device_timestamps", True)
+        self.declare_parameter("imu_rate_hz", 104.0)  # LSM6DS3 output data rate, to count missed samples
+        self.declare_parameter("clock_window_s", 10.0)
+        self.declare_parameter("timing_log_every_s", 10.0)
         self.declare_parameter("log_every_n_invalid", 25)
         self.declare_parameter("log_every_n_no_gyro", 100)
         self.declare_parameter("max_abs_accel_mps2", 30.0)
@@ -114,6 +133,14 @@ class NanoAccelSerialNode(Node):
         self._allow_legacy_3axis_lines = bool(
             self.get_parameter("allow_legacy_3axis_lines").value
         )
+        self._use_device_timestamps = bool(self.get_parameter("use_device_timestamps").value)
+        self._imu_period_us = 1.0e6 / max(1.0, float(self.get_parameter("imu_rate_hz").value))
+        self._timing_log_every_s = max(1.0, float(self.get_parameter("timing_log_every_s").value))
+        self._unwrap_us = CounterUnwrapper(32)
+        self._mcu_clock = DeviceClockMapper(window_s=float(self.get_parameter("clock_window_s").value))
+        self._warned_host_stamps = False
+        self._reset_device_timing()
+        self._reset_timing_stats()
         self._max_abs_accel_mps2 = max(
             1.0, float(self.get_parameter("max_abs_accel_mps2").value)
         )
@@ -450,40 +477,9 @@ class NanoAccelSerialNode(Node):
         )
         return profiles
 
-    def _parse_line(
-        self, line: str
-    ) -> Optional[Tuple[float, float, float, float, float, float, bool]]:
-        """Parse one serial line into accel+gyro values (SI units)."""
-        text = line.strip()
-        if not text:
-            return None
-
-        # Accept optional prefixes such as "ACC:" or "INFO:".
-        if ":" in text:
-            text = text.split(":", 1)[1].strip()
-
-        parts = [p for p in re.split(r"[,\s;]+", text) if p]
-        if len(parts) < 3:
-            return None
-
-        try:
-            ax = float(parts[0])
-            ay = float(parts[1])
-            az = float(parts[2])
-            if len(parts) >= 6:
-                gx = float(parts[3])
-                gy = float(parts[4])
-                gz = float(parts[5])
-                if not all(math.isfinite(v) for v in (ax, ay, az, gx, gy, gz)):
-                    return None
-                return (ax, ay, az, gx, gy, gz, True)
-            if not self._allow_legacy_3axis_lines:
-                return None
-            if not all(math.isfinite(v) for v in (ax, ay, az)):
-                return None
-            return (ax, ay, az, 0.0, 0.0, 0.0, False)
-        except ValueError:
-            return None
+    def _parse_line(self, line: str) -> Optional[ImuLine]:
+        """Parse one serial line into a sample (SI units)."""
+        return parse_imu_line(line, self._allow_legacy_3axis_lines)
 
     def _sample_is_physically_plausible(
         self,
@@ -514,8 +510,12 @@ class NanoAccelSerialNode(Node):
         gy: float,
         gz: float,
         has_gyro: bool,
+        stamp_ns: Optional[int] = None,
     ) -> None:
-        stamp = self.get_clock().now().to_msg()
+        if stamp_ns is None:
+            stamp = self.get_clock().now().to_msg()
+        else:
+            stamp = RosTime(nanoseconds=int(stamp_ns)).to_msg()
 
         accel_msg = Vector3Stamped()
         accel_msg.header.stamp = stamp
@@ -603,6 +603,100 @@ class NanoAccelSerialNode(Node):
             except Exception:
                 pass
 
+    def _reset_device_timing(self) -> None:
+        """Forget the MCU clock (new serial session or MCU restart)."""
+        self._unwrap_us.reset()
+        self._mcu_clock.reset()
+        self._last_seq: Optional[int] = None
+        self._last_dev_us: Optional[int] = None
+        self._last_stamp_ns: Optional[int] = None
+
+    def _reset_timing_stats(self) -> None:
+        self._stats_t0 = time.monotonic()
+        self._stats_samples = 0
+        self._stats_missed = 0
+        self._stats_lost_lines = 0
+
+    def _read_lines(self, ser, buf: bytearray) -> list[tuple[bytes, int]]:
+        """Complete lines read now, each with the host time (ns) of the read that completed it.
+
+        Reads whatever is waiting in one call (instead of readline's byte by
+        byte), and takes the host time as soon as the read returns.
+        """
+        waiting = ser.in_waiting
+        data = ser.read(waiting if waiting > 0 else 1)
+        if not data:
+            return []
+        rx_ns = self.get_clock().now().nanoseconds
+        buf += data
+        lines = []
+        while True:
+            cut = buf.find(b"\n")
+            if cut < 0:
+                break
+            lines.append((bytes(buf[:cut]), rx_ns))
+            del buf[: cut + 1]
+        if len(buf) > 4096:
+            buf.clear()  # no line end in 4 KiB: not the IMU stream
+        return lines
+
+    def _stamp_for(self, sample: ImuLine, rx_ns: int) -> int:
+        """ROS stamp (ns) of a sample: its MCU data-ready time, or the reception time."""
+        if sample.t_us is None or not self._use_device_timestamps:
+            if not self._warned_host_stamps and self._use_device_timestamps:
+                self._warned_host_stamps = True
+                self.get_logger().warning(
+                    "IMU lines carry no MCU time (firmware v1?): stamping on reception, with the USB "
+                    "latency and its jitter. Flash arduino/nano33_iot_accel_stream (v2)."
+                )
+            stamp = int(rx_ns)
+        else:
+            if sample.seq is not None and self._last_seq is not None and sample.seq < self._last_seq:
+                self.get_logger().warning(
+                    "Nano restarted (sample counter %d -> %d): resynchronising its clock."
+                    % (self._last_seq, sample.seq)
+                )
+                self._reset_device_timing()
+            if sample.seq is not None and self._last_seq is not None:
+                self._stats_lost_lines += max(0, sample.seq - self._last_seq - 1)
+            self._last_seq = sample.seq
+            dev_us = self._unwrap_us(sample.t_us)
+            if self._last_dev_us is not None:
+                dt_us = dev_us - self._last_dev_us
+                if dt_us > 1.5 * self._imu_period_us:
+                    self._stats_missed += int(round(dt_us / self._imu_period_us)) - 1
+            self._last_dev_us = dev_us
+            stamp = self._mcu_clock.add(dev_us * 1.0e-6, rx_ns)
+        if self._last_stamp_ns is not None and stamp <= self._last_stamp_ns:
+            stamp = self._last_stamp_ns + 1000
+        self._last_stamp_ns = stamp
+        self._stats_samples += 1
+        self._maybe_log_timing()
+        return stamp
+
+    def _maybe_log_timing(self) -> None:
+        elapsed = time.monotonic() - self._stats_t0
+        if elapsed < self._timing_log_every_s:
+            return
+        s = self._mcu_clock.stats()
+        self.get_logger().info(
+            "IMU timing: %.1f Hz (chip %.0f Hz), chip samples missed %d, lines lost %d, "
+            "MCU clock drift %+.0f ppm, reception latency above envelope p50 %.2f ms p95 %.2f ms, "
+            "clock resets %d, rejected %d"
+            % (
+                self._stats_samples / elapsed,
+                1.0e6 / self._imu_period_us,
+                self._stats_missed,
+                self._stats_lost_lines,
+                s.drift_ppm,
+                s.latency_p50_ms,
+                s.latency_p95_ms,
+                s.resets,
+                s.rejected,
+            )
+        )
+        self._reset_timing_stats()
+
     def _serial_worker(self) -> None:
         if serial is None:
             self.get_logger().error("pyserial is not available. Install python3-serial.")
@@ -631,6 +725,8 @@ class NanoAccelSerialNode(Node):
                     % (self._serial_port, self._baudrate, profile.name, attempt_count)
                 )
                 self._prepare_serial_connection(ser, profile)
+                self._reset_device_timing()
+                rx_buf = bytearray()
 
                 connect_t = time.monotonic()
                 last_no_data_log_t = connect_t
@@ -639,8 +735,8 @@ class NanoAccelSerialNode(Node):
                 invalid_since_connect = 0
 
                 while not self._stop_event.is_set():
-                    raw = ser.readline()
-                    if not raw:
+                    batch = self._read_lines(ser, rx_buf)
+                    if not batch:
                         now_t = time.monotonic()
                         if now_t - last_no_data_log_t >= self._log_no_data_every_s:
                             self.get_logger().warning(
@@ -655,60 +751,64 @@ class NanoAccelSerialNode(Node):
                             )
                         continue
 
-                    line = raw.decode("utf-8", errors="replace").strip()
-                    parsed = self._parse_line(line)
-                    if parsed is None:
-                        invalid_since_connect += 1
-                        self._invalid_counter += 1
-                        if self._invalid_counter % self._log_every_n_invalid == 0:
-                            self.get_logger().warning(
-                                "Skipping invalid serial line on profile=%s: '%s'"
-                                % (profile.name, line)
-                            )
-                        if (
-                            invalid_since_connect >= self._log_every_n_invalid
-                            and (time.monotonic() - connect_t) >= self._no_data_reconnect_s
-                            and valid_samples == 0
-                        ):
-                            raise RuntimeError(
-                                "Only invalid serial lines seen for %.2fs on profile=%s; reconnecting"
-                                % (time.monotonic() - connect_t, profile.name)
-                            )
-                        continue
-
-                    ax, ay, az, gx, gy, gz, has_gyro = parsed
-                    if not self._sample_is_physically_plausible(ax, ay, az, gx, gy, gz, has_gyro):
-                        invalid_since_connect += 1
-                        self._invalid_counter += 1
-                        if self._invalid_counter % self._log_every_n_invalid == 0:
-                            self.get_logger().warning(
-                                (
-                                    "Skipping implausible IMU sample on profile=%s: "
-                                    "accel=(%.3f, %.3f, %.3f) gyro=(%.3f, %.3f, %.3f)"
+                    for raw, rx_ns in batch:
+                        line = raw.decode("utf-8", errors="replace").strip()
+                        parsed = self._parse_line(line)
+                        if parsed is None:
+                            invalid_since_connect += 1
+                            self._invalid_counter += 1
+                            if self._invalid_counter % self._log_every_n_invalid == 0:
+                                self.get_logger().warning(
+                                    "Skipping invalid serial line on profile=%s: '%s'"
+                                    % (profile.name, line)
                                 )
-                                % (profile.name, ax, ay, az, gx, gy, gz)
+                            if (
+                                invalid_since_connect >= self._log_every_n_invalid
+                                and (time.monotonic() - connect_t) >= self._no_data_reconnect_s
+                                and valid_samples == 0
+                            ):
+                                raise RuntimeError(
+                                    "Only invalid serial lines seen for %.2fs on profile=%s; reconnecting"
+                                    % (time.monotonic() - connect_t, profile.name)
+                                )
+                            continue
+
+                        ax, ay, az = parsed.ax, parsed.ay, parsed.az
+                        gx, gy, gz, has_gyro = parsed.gx, parsed.gy, parsed.gz, parsed.has_gyro
+                        if not self._sample_is_physically_plausible(ax, ay, az, gx, gy, gz, has_gyro):
+                            invalid_since_connect += 1
+                            self._invalid_counter += 1
+                            if self._invalid_counter % self._log_every_n_invalid == 0:
+                                self.get_logger().warning(
+                                    (
+                                        "Skipping implausible IMU sample on profile=%s: "
+                                        "accel=(%.3f, %.3f, %.3f) gyro=(%.3f, %.3f, %.3f)"
+                                    )
+                                    % (profile.name, ax, ay, az, gx, gy, gz)
+                                )
+                            if (
+                                invalid_since_connect >= self._log_every_n_invalid
+                                and (time.monotonic() - connect_t) >= self._no_data_reconnect_s
+                                and valid_samples == 0
+                            ):
+                                raise RuntimeError(
+                                    "Only implausible serial IMU samples seen for %.2fs on profile=%s; reconnecting"
+                                    % (time.monotonic() - connect_t, profile.name)
+                                )
+                            continue
+                        invalid_since_connect = 0
+                        valid_samples += 1
+                        last_no_data_log_t = time.monotonic()
+                        last_sample_t = last_no_data_log_t
+                        if valid_samples == 1:
+                            self.get_logger().info(
+                                "First valid Arduino IMU sample received on %s (profile=%s)."
+                                % (self._serial_port, profile.name)
                             )
-                        if (
-                            invalid_since_connect >= self._log_every_n_invalid
-                            and (time.monotonic() - connect_t) >= self._no_data_reconnect_s
-                            and valid_samples == 0
-                        ):
-                            raise RuntimeError(
-                                "Only implausible serial IMU samples seen for %.2fs on profile=%s; reconnecting"
-                                % (time.monotonic() - connect_t, profile.name)
-                            )
-                        continue
-                    invalid_since_connect = 0
-                    valid_samples += 1
-                    last_no_data_log_t = time.monotonic()
-                    last_sample_t = last_no_data_log_t
-                    if valid_samples == 1:
-                        self.get_logger().info(
-                            "First valid Arduino IMU sample received on %s (profile=%s)."
-                            % (self._serial_port, profile.name)
+                            self._preferred_profile_index = profile_index
+                        self._publish_sample(
+                            ax, ay, az, gx, gy, gz, has_gyro, stamp_ns=self._stamp_for(parsed, rx_ns)
                         )
-                        self._preferred_profile_index = profile_index
-                    self._publish_sample(ax, ay, az, gx, gy, gz, has_gyro)
             except Exception as exc:
                 self.get_logger().warning(
                     "Serial connection error on %s (profile=%s): %s"

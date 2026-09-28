@@ -19,6 +19,10 @@ nano_accel_serial_node:
     imu_topic: "/apex/imu/data_raw"
     publish_imu_topic: true
     allow_legacy_3axis_lines: false
+    use_device_timestamps: true             # firmware v2: stamp at the MCU data-ready time
+    imu_rate_hz: 104.0
+    clock_window_s: 10.0
+    timing_log_every_s: 10.0
     log_every_n_invalid: 25
     log_every_n_no_gyro: 100
     max_abs_accel_mps2: 30.0
@@ -118,7 +122,10 @@ kinematics_odometry_node:
 
 apex_rplidar_publisher:
   ros__parameters:
-    source_backend: "rplidar"
+    # rplidar_express: A2M8 Express scan (4 kHz) at a regulated 10 Hz, stamped at the
+    # first sample of each revolution (docs/sensor_timing_requirements.md).
+    # "rplidar" is the previous python-library driver (2 kHz, ~13 Hz, stamped on reception).
+    source_backend: "rplidar_express"
     port: "/dev/ttyUSB0"
     baudrate: 115200
     topic: "/lidar/scan"
@@ -133,6 +140,17 @@ apex_rplidar_publisher:
     fill_missing_bins: false
     range_min: 0.05
     range_max: 12.0
+    scan_raw_topic: "/lidar/scan_raw"      # simulation layout, input of the learned odometry
+    publish_scan_raw: true
+    raw_range_min_m: 0.15
+    raw_range_max_m: 12.0
+    target_rate_hz: 10.0
+    motor_pwm: 520                          # start value, regulated towards target_rate_hz
+    regulate_motor: true
+    motor_settle_s: 2.0
+    stamp_correction_ms: 0.0                # minimum USB latency, to calibrate on the car
+    drop_incomplete_revolutions: true
+    timing_log_every_s: 10.0
     sim_scan_topic: "/apex/sim/scan"
     sim_publish_latency_s: 0.03
     sim_random_seed: 4242
