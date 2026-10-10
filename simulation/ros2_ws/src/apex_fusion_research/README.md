@@ -794,6 +794,222 @@ For the 8 kHz / 13 Hz sensor of the earlier validation, use `--sensor APEX_real_
 - **Robust to the real sensor's artefacts.** Spurious returns, the car's own wheel in the scan, and the floor seen while braking no longer stop the car or trigger the guard (0–2 hand-overs per run, down from 5–34 before these fixes).
 - **Tests.** 80 unit tests plus a closed-loop test pass. The 2D harness completes all 8 runs on three tracks (`test_unseen`, `val_mixed`, the replica of the real track).
 
+## 14. The car identifies its own plant
+
+Everything up to here assumes the car knows itself: `vehicle.yaml` gives it a
+wheelbase of 0.30 m, a rear axle 0.15 m behind `base_link`, a servo whose
+linkage reaches 96 % to the right, an ESC that turns a command in m/s into that
+speed exactly, and a LiDAR at 0.18 m. On the real car not one of those numbers
+has been measured. The distance between the axles is a number from a drawing,
+the servo has whatever gain and whatever centre it has, the ESC takes a
+*percentage* and nobody has calibrated it against m/s, the battery is as
+charged as it is, and the LiDAR is bolted where it fits.
+
+So the car measures itself instead, from the one sensor it has: the trained
+odometry. `core/plant_id.py` identifies it and `core/adaptive.py` uses it.
+
+### 14.1 What is identifiable, and what is not worth estimating
+
+Each measurement is one pose increment `(dx, dy, dyaw)` of one LiDAR
+revolution, of the point the estimator calls `base_link`, with the sigma the
+network publishes on `twist.covariance`. Three aggregates come out of it, and
+they are exactly the three the control needs.
+
+**The lever arm.** Writing that increment for a rear-axle arc of any curvature
+and eliminating the unknown arc length between its two components gives, with
+`h = dyaw / 2`,
+
+```
+dy - dx tan(h)  =  2 tan(h) arm        exactly, for any turn angle
+```
+
+because `(1 - cos 2h) - tan(h) sin 2h` is identically zero. One linear
+regression, no velocity and no `dt` in it, and it answers at once *how far is
+the front axle*, *where is the LiDAR relative to the centre* and *what is the
+reference point of the tracking*. It replaces `rear_offset_m`.
+
+**The curvature map.** With the arm known, `kappa = sin(dyaw) / (dx + arm (1 -
+cos dyaw))` is the curvature the car actually drove, and against the curvature
+that was commanded (delayed by the steering lag) it is
+
+```
+kappa = gain_left max(u, 0) + gain_right min(u, 0) + trim + slip (v^2 - v_ref^2) u
+```
+
+a gain per side, a trim for a steering that is not centred, and a `v^2` term
+for the slip of the rear axle. **The wheelbase is a gauge, not a parameter.**
+The planners emit `atan(L kappa)` and the inverse divides by the same `L`, so
+it cancels; what is left of it, together with the wheelbase the actuation
+bridge assumes, the servo gain and the linkage, is one lumped gain per side.
+Estimating the wheelbase separately is impossible and would be useless.
+
+**The speed map.** `v = v_gain u + v_offset`, where the charge of the battery
+lives in `v_gain` as a slow random walk rather than a constant. The command
+below which the motor does not start is not fitted through that kink: it is
+bracketed from the launches, where the command the car broke away at is an
+upper bound on it.
+
+Not worth estimating, and deliberately not estimated: the lateral mount offset
+and the mount yaw (confounded with scale and heading drift at the millimetre
+level, and the SLAM absorbs a constant mount yaw into `map -> odom`), and the
+braking limit (a car slowing down is slowed by drag and by the brake, not by
+the gain this identifies, which is why no speed update is accepted while the
+command is below the measured speed).
+
+### 14.2 Why it converges slowly, and why that is the point
+
+Each estimate starts *at* the datasheet with the datasheet's covariance, so the
+recursion is the Bayesian posterior: it starts where the car's own description
+says, moves only as fast as the sigma-weighted evidence warrants, and does not
+move at all in a direction nothing excited. A car that has only turned left
+keeps the nominal right-hand gain, with its full prior uncertainty, and says so
+(`conf_right`). That is the same behaviour the SLAM has over lap 1, and it is
+why nothing in the controller needs a second shrinkage towards the prior: with
+no data the identified model *is* the prior, and the commands are the ones the
+unmodified driver published.
+
+Two safeguards carry as much weight as the mathematics:
+
+* **A floor under the measurement variance.** The published sigmas are tiny
+  (0.2 mm on `dy`), and taken at face value they make the filter trust the data
+  a hundred times more than the model deserves, chasing suspension and
+  Ackermann error. The floor is the residual measured on recorded runs
+  (1.5 mm, 0.013 1/m, 0.05 m/s) and it rises to whatever the residuals turn out
+  to be. Without it the whole "converge slowly" requirement fails silently.
+* **A watchdog.** The one-step error of the identified model is compared with
+  the prior's, continuously and for free. If the identified model is the worse
+  of the two by a real margin, it is thrown away and the datasheet restored;
+  three times and adaptation latches off for the rest of the run. The adaptive
+  car can never be worse than the nominal one by more than one window.
+
+A reversed steering is treated as a fault and not as a parameter: the gains are
+boxed positive, and if the first 20 excited samples disagree in sign the car
+refuses to adapt and says so. On the real car that is a wiring check.
+
+### 14.3 What the car does with it
+
+`core/adaptive.py` inverts the map (`kappa_cmd = (kappa_des - trim) / gain`),
+adds `tau d(kappa)/dt` to invert the lag, clamps the command to the saturation
+it has actually observed, and divides the speed request by the identified gain
+before adding the start threshold. There is **no PI on top of either**: the
+identified trim already integrates the lateral bias and the identified gain the
+longitudinal one, both weighted by the sigma of the measurement, and a second
+integrator on the same quantity is how limit cycles are built. What is added is
+proportional only.
+
+Nothing raises the loop gain. With feedback at 10 Hz and 0.19 s of latency the
+lateral loop is already at the limit of what the delay allows, so an unsure car
+*looks further ahead* (which buys damping) and gives up some speed. It can also
+take more margin, and that is wired, but it ships at zero: over the ten
+documented seeds the wider lap-1 margins cost 2.3 s of the lap-1 median, enough
+to leave the 44-51 s band, and did not improve the smallest clearance of the
+campaign at all -- the confidence is only unresolved over the first 10-15 m,
+and that is not where the minimum clearance of a lap is set
+(`adaptive.wall_margin_add_m`). The confidence schedule is monotone and one-sided: at zero confidence
+every quantity is more careful than the nominal configuration and at full
+confidence it is exactly the nominal configuration. It can never be more
+daring, which `test_adaptive.py` asserts.
+
+Why not MPC: `learning/lidar_imu_pose/pi4_budget.py` puts the estimator alone at
+the Pi's limit and leaves the whole control loop 0.30 of a core, the achievable
+bandwidth at 10 Hz feedback and 0.19 s of dead time is 0.25 Hz (the regime
+where a horizon buys nothing a slower controller cannot do), and the
+receding-horizon optimiser already exists: `core/reactive.py` solves a
+constrained finite-horizon problem in curvature space at 10 Hz. The division of
+labour is planner = horizon, adaptive layer = plant inverse. The whole layer
+costs microseconds per control tick.
+
+### 14.4 Getting out of a dead end
+
+A planner with no feasible candidate used to brake and leave the car standing
+there for the rest of the run, and so did the lane rule when the car lost the
+wall it was following. The car now creeps forward where the lane is proven and
+**backs out where it is not**, over ground it has already driven, bounded in
+distance, in time and in attempts per lap. It does not creep forward after
+losing a wall: the curbs are invisible, so the way out of there is backwards.
+The reverse needs the ESC walked through brake and neutral first, as the real
+one does.
+
+### 14.5 Validating it honestly
+
+Without a plant to find, identification buys about 4 % of residual and proves
+nothing. So a run *draws* its own plant (`pose_dataset.vehicle.draw_plant_mismatch`):
+its wheelbase and the position of its axles (xacro args, so the Gazebo geometry
+moves with them), the gain and centre of its servo and the asymmetry of its
+linkage, the gain of its ESC and how much the battery sags over the run, the
+command its motor starts at, and the wheelbase its own actuation bridge
+assumes. The spread is the spread the estimator carries as its prior: one table
+describes both what the car believes and how wrong it can be. **Every key
+defaults to the identity**, so the dataset-generation path is untouched, and
+`--plant-scale 0` reproduces the datasheet exactly (which is what the format
+regression run uses). What came up is written to `run_config.json` under
+`plant_true`, for the evaluation only: `test_knowledge_firewall.py` forbids the
+car side from reading it, and every run records the topics it subscribed to.
+
+The identification can be replayed over any finished run, in a second, without
+a simulator, from `estimator.csv` and `driver.csv`:
+
+```bash
+learning/.venv/bin/python tools/analysis/replay_adaptation.py data/real2sim/<run>
+```
+
+One thing the Gazebo runs cannot show, and it is worth being plain about it.
+The lever arm the estimator measures is the one of the signal it is handed, and
+that signal comes from a network trained to output the increments of
+``base_link`` *of the nominal car*. Its reported frame therefore stays anchored
+to the geometry it was trained on instead of following the geometry a run
+drew: over the campaign the estimate lands at 0.148 m with a 2 mm sigma
+whatever was drawn, uncorrelated with the drawn axle position and with the
+3.7 cm spread of the drawn LiDAR mount. That is the right answer for the
+control, which needs the reference point of the pose it actually receives --
+but it means this particular unknown is exercised by the 2D harness, where the
+odometry is synthesised as the geometric point and the arm comes back to the
+millimetre (0.084 m drawn, 0.084 m found), and by the exactness test, and not
+by Gazebo. On the real car the same holds: the arm to identify is the network's,
+which is what this measures.
+
+On runs recorded before any plant was drawn the answer must be the datasheet,
+and it is: over `fin_s7`, `fin_s9` and `fin_s12` the arm comes out at 0.1488,
+0.1482 and 0.1474 m against 0.1478 m of geometry (within a millimetre), the
+gains at 0.99-1.01, the trim within 0.002 1/m and no watchdog trip. That is the
+null test, and it is the cheapest way to catch a sign, a scale or a sigma
+mistake. **It is also how the real car's plant gets measured**: the same two
+CSVs recorded on the Pi, replayed offline, before anything is tuned on the car.
+
+### 14.6 On the real car
+
+The unknowns are not an analogy, they are the configuration constants of
+`real_vehicle/.../actuation/cmd_vel_to_apex_actuation_node.py`:
+
+| Identified here | Is this, on the car |
+| --- | --- |
+| `v_gain`, `v_offset` | the bridge maps `pct = min_effective_speed_pct + (linear.x / max_linear_speed_mps) (max_speed_pct - min_effective_speed_pct)`, open loop and never calibrated. `v_gain` *is* how wrong `max_linear_speed_mps` (0.55) is, and `v_offset` the intercept. One caveat: with `min_effective_speed_pct` equal to `max_speed_pct`, as the single-level test configuration had them, that expression is on/off and carries no information about speed at all -- give it a proportional range before expecting the longitudinal half to identify anything |
+| start threshold | the duty cycle below which the motor does not turn |
+| `trim` | `steering_center_trim_dc` |
+| `gain_left` / `gain_right` | `steering_direction_sign` times the servo gain, times `wheelbase_m` of the bridge over the real one, times the linkage asymmetry |
+| `arm` | where the LiDAR is bolted, and where the rear axle is under it |
+| `tau_steer`, `tau_speed` | the servo and ESC lags, including the 50 Hz command hold |
+
+The command interface does not change: `geometry_msgs/Twist` on
+`/apex/cmd_vel_track`, `angular.z = v kappa`. The sign of the curvature
+survives a negative speed, so the same channel steers the car while it backs
+out. Below 0.02 m/s a Twist carries no steering at all (`angular.z` goes to
+zero with the speed) and the servo holds, which is what a servo does; the
+launch ramp leaves standstill above that.
+
+Two further limits worth stating. The identified curvature map is linear in
+the command (plus the `v^2` term), so the Ackermann error of a real linkage,
+which makes the gain vary with the steering angle, is averaged rather than
+modelled; at this steering range it sits inside the 0.013 1/m residual floor,
+and if the car turns out to need it the map gains a `|u| u` column rather than
+a new mechanism. And the reverse start threshold cannot be measured here at
+all: the prior is declared and not estimated, and the bench is the car.
+
+What the car needs at bring-up: a proportional speed range in the bridge (see
+the table), the steering sign check, and one recording driven by hand, which
+`replay_adaptation.py` turns into the car's own plant without it having to move
+under the controller first.
+
 ## References
 
 1. S. Thrun, W. Burgard, D. Fox, *Probabilistic Robotics*, MIT Press, 2005 (ch. 6).

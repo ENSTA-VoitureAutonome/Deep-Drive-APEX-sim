@@ -26,6 +26,8 @@ LAPS=""
 SENSOR="APEX_real"
 CHECKPOINT="${APEX_SIM_ROOT}/learning/outputs/real2sim_v5_10hz/hybrid_submap_v4/best_model.pt"
 DEVICE="cpu"
+ICP_BACKEND="cdist"
+NET_BACKEND="torch"
 DRIVE="estimate"
 START_POSE="true"
 GUI="false"
@@ -44,6 +46,8 @@ IMU_OFFSET_MS="nan"
 LIDAR_OFFSET_MS="nan"
 GYRO_BIAS_Z_EXTRA="0.0"
 DRIVER_SET=""
+PLANT_SCALE=""
+PLANT_MISMATCH=""
 SKIP_BUILD=0
 
 usage() {
@@ -59,6 +63,8 @@ Format (as in tools/pose_dataset/config/campaign.yaml):
 Estimator:
   --checkpoint <file>  streaming / hybrid checkpoint (default: real2sim_v5_10hz/hybrid_submap_v4/best_model.pt, trained for the A2M8 in Express mode at 10 Hz; previous: real2sim_v3_robust/hybrid_submap_v3_real, real2sim_v2_fast/hybrid_submap_v3)
   --device <d>         cpu (default, ~20 ms per scan) | cuda
+  --icp-backend <b>    cdist (default: torch nearest neighbours) | polar (compiled, same estimates, ~5x cheaper per scan; learning/lidar_imu_pose/polar_icp.py)
+  --net-backend <b>    torch (default) | onnx (same network on ONNX Runtime; export first: learning/lidar_imu_pose/onnx_net.py export)
 Driver:
   --driver <d>         race (default: reactive lap 1 + map + race line) | format (dataset path)
   --w-min <m>          race: minimum lane width the car assumes (default: 1.5)
@@ -93,6 +99,8 @@ while [[ $# -gt 0 ]]; do
     --sensor) SENSOR="$2"; shift 2 ;;
     --checkpoint) CHECKPOINT="$2"; shift 2 ;;
     --device) DEVICE="$2"; shift 2 ;;
+    --icp-backend) ICP_BACKEND="$2"; shift 2 ;;
+    --net-backend) NET_BACKEND="$2"; shift 2 ;;
     --drive) DRIVE="$2"; shift 2 ;;
     --driver) DRIVER="$2"; shift 2 ;;
     --w-min) W_MIN="$2"; shift 2 ;;
@@ -104,6 +112,8 @@ while [[ $# -gt 0 ]]; do
     --lidar-offset-ms) LIDAR_OFFSET_MS="$2"; shift 2 ;;
     --gyro-bias-z-extra) GYRO_BIAS_Z_EXTRA="$2"; shift 2 ;;
     --driver-set) DRIVER_SET="$2"; shift 2 ;;
+    --plant-scale) PLANT_SCALE="$2"; shift 2 ;;
+    --no-plant-mismatch) PLANT_MISMATCH="false"; shift ;;
     --start-pose) START_POSE="$2"; shift 2 ;;
     --gui) GUI="true"; shift ;;
     --no-rviz) RVIZ="false"; shift ;;
@@ -167,9 +177,10 @@ WALL_START="$(date +%s.%N)"
 
 setsid ros2 launch apex_fusion_research apex_real2sim.launch.py \
   "track:=${TRACK}" "motion:=${MOTION}" "seed:=${SEED}" "laps:=${LAPS}" "sensor_profile:=${SENSOR}" \
-  "checkpoint:=${CHECKPOINT}" "device:=${DEVICE}" "drive:=${DRIVE}" "start_pose:=${START_POSE}" "gui:=${GUI}" "rviz:=${RVIZ}" ${RVIZ_CONFIG:+"rviz_config:=${RVIZ_CONFIG}"} "run_dir:=${RUN_DIR}" \
+  "checkpoint:=${CHECKPOINT}" "device:=${DEVICE}" "icp_backend:=${ICP_BACKEND}" "net_backend:=${NET_BACKEND}" "drive:=${DRIVE}" "start_pose:=${START_POSE}" "gui:=${GUI}" "rviz:=${RVIZ}" ${RVIZ_CONFIG:+"rviz_config:=${RVIZ_CONFIG}"} "run_dir:=${RUN_DIR}" \
   "driver:=${DRIVER}" "w_min:=${W_MIN}" "v_explore:=${V_EXPLORE}" "race_line:=${RACE_LINE}" "v_max_race:=${V_MAX_RACE}" "a_lat:=${A_LAT}" \
   "imu_offset_ms:=${IMU_OFFSET_MS}" "lidar_offset_ms:=${LIDAR_OFFSET_MS}" "gyro_bias_z_extra:=${GYRO_BIAS_Z_EXTRA}" ${DRIVER_SET:+"driver_set:=${DRIVER_SET}"} \
+  ${PLANT_SCALE:+"plant_scale:=${PLANT_SCALE}"} ${PLANT_MISMATCH:+"plant_mismatch:=${PLANT_MISMATCH}"} \
   > >(tee "${RUN_DIR}/launch.log") 2>&1 &
 LAUNCH_PID=$!
 

@@ -3,6 +3,11 @@
 Input : ``geometry_msgs/Twist`` on ``/apex/cmd_vel_track`` (the interface of
         the real car: linear.x speed, angular.z yaw rate; the steering angle is
         atan(wheelbase * yaw_rate / speed), as cmd_vel_to_apex_actuation_node).
+        That wheelbase is the one *this bridge* assumes, which on the real car
+        is a configured constant nobody measured, so a run may draw it: the
+        ratio between it and the driver's own value is one more unknown the
+        controller has to identify, and it is indistinguishable from a servo
+        gain, which is exactly why the identification lumps them together.
 Output: Gazebo joint commands (rear wheel velocities, knuckle positions for
         the JointPositionController plugins), stepped on the simulation clock.
 The dynamics are ``tools/pose_dataset/vehicle.Actuators`` with the limits of
@@ -33,6 +38,18 @@ class SimActuationNode(Node):
         dp("esc_tau_scale", 1.0)
         dp("servo_tau_scale", 1.0)
         dp("model_name", "rc_car")
+        # The plant of this run, drawn by the launch; every default is the
+        # identity, so an unset parameter is the car of vehicle.yaml.
+        for name in ("wheelbase_m", "steer_gain", "esc_gain", "right_ratio"):
+            dp(name, 0.0)
+        for name in ("steer_trim_deg", "esc_sag_per_min", "stiction_mps", "reverse_top_speed_mps", "reverse_engage_s"):
+            dp(name, 0.0)
+        dp("decode_wheelbase_m", 0.0)
+        # Below this speed the Twist carries no steering information at all
+        # (angular.z = v * kappa goes to zero with v), so the servo holds its
+        # angle, as a servo does. The driver guarantees it only manoeuvres
+        # above it: its launch ramp leaves standstill at >= 0.1 m/s.
+        dp("decode_v_min", 0.02)
         gp = lambda n: self.get_parameter(n).value  # noqa: E731
         tools_path()
         from pose_dataset.vehicle import Actuators, load_vehicle_config  # noqa: PLC0415
@@ -40,7 +57,16 @@ class SimActuationNode(Node):
         from gz.transport13 import Node as GzNode  # noqa: PLC0415
 
         self._double = double_pb2.Double
-        self.act = Actuators(load_vehicle_config(), {"esc_tau_scale": float(gp("esc_tau_scale")), "servo_tau_scale": float(gp("servo_tau_scale"))})
+        perturb = {"esc_tau_scale": float(gp("esc_tau_scale")), "servo_tau_scale": float(gp("servo_tau_scale"))}
+        for name in ("wheelbase_m", "steer_gain", "esc_gain", "right_ratio", "steer_trim_deg",
+                     "esc_sag_per_min", "stiction_mps", "reverse_top_speed_mps", "reverse_engage_s"):
+            value = float(gp(name))
+            if value != 0.0:
+                perturb[name] = value
+        self.act = Actuators(load_vehicle_config(), perturb)
+        self._decode_wheelbase = float(gp("decode_wheelbase_m")) or self.act.wheelbase
+        self._decode_v_min = float(gp("decode_v_min"))
+        self._frozen_steer = 0
         m = str(gp("model_name"))
         gz = GzNode()
         self._gz = gz
@@ -59,8 +85,12 @@ class SimActuationNode(Node):
 
     def _on_cmd(self, msg: Twist) -> None:
         v = float(msg.linear.x)
-        if abs(v) > 0.05:
-            self._steer_deg = math.degrees(math.atan(self.act.wheelbase * float(msg.angular.z) / v))
+        if abs(v) > self._decode_v_min:
+            # The sign of the curvature survives a negative speed, so this is
+            # also how the car steers while it reverses out of a dead end.
+            self._steer_deg = math.degrees(math.atan(self._decode_wheelbase * float(msg.angular.z) / v))
+        else:
+            self._frozen_steer += 1
         self.act.set_command(v, self._steer_deg)
         self._last_cmd_ns = self.get_clock().now().nanoseconds
 

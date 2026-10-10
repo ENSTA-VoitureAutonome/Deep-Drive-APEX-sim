@@ -73,6 +73,7 @@ def _setup(context, *_args, **_kwargs):  # noqa: ANN001, ANN202
     from apex_fusion_research.core.imu_chip import gazebo_noise_from_profile
     from apex_fusion_research.nodes._pose_tools import run_setup
     from pose_dataset.sensors import draw_extrinsic, load_sensor_profiles, rng_for
+    from pose_dataset.vehicle import draw_plant_mismatch
 
     track, motion, seed, laps = arg("track"), arg("motion"), int(arg("seed")), float(arg("laps"))
     sensor = arg("sensor_profile")
@@ -85,12 +86,24 @@ def _setup(context, *_args, **_kwargs):  # noqa: ANN001, ANN202
     rng = rng_for(tkey, hardware, "mounts")  # the physical sensor set of this trajectory (as the dataset)
     lidar_ext = draw_extrinsic(profile["lidar"], rng)
     imu_ext = draw_extrinsic(profile["imu"], rng)
+    # The plant of this run. The car is told vehicle.yaml and nothing else: its
+    # wheelbase, the position of its axles, the gain and centre of its servo,
+    # the command its motor starts at, the charge of its battery and the
+    # wheelbase its own actuation bridge assumes are all drawn here and never
+    # passed to the driver, which has to identify what it is driving from its
+    # odometry. A dedicated stream keeps every other draw of the run unchanged.
+    plant_scale = float(arg("plant_scale")) if arg("plant_mismatch").lower() in ("1", "true", "yes") else 0.0
+    if arg("driver") != "race":
+        plant_scale = 0.0  # the format run regresses the estimator: same car every time
+    plant = draw_plant_mismatch(rng_for(tkey, hardware, "plant"), plant_scale)
+    lidar_ext["xyz_true"][0] += plant["lidar_extra_x"]
     gz_cfg = profile["lidar"].get("gazebo", {})
     xargs = {
         "suspension": "true", "camera": "false", "imu_clean_reference": "false", "imu_update_rate": "1000",
         "lidar_update_rate": f"{float(gz_cfg.get('capture_rate_hz', 26.0)):g}", "lidar_samples": str(int(gz_cfg.get("capture_samples", 1440))),
         "lidar_range_min": f"{float(gz_cfg.get('capture_range_min_m', 0.05)):g}", "lidar_range_max": f"{1.2 * float(profile['lidar']['range_max_m']):g}",
         "lidar_range_resolution": "0.0001",
+        "wheelbase_m": f"{plant['wheelbase_m']:.6g}", "rear_axle_offset_x": f"{plant['rear_axle_offset_x']:.6g}",
         "lidar_xyz": _axes(lidar_ext["xyz_true"]), "lidar_rpy": _axes(lidar_ext["rpy_true_rad"]),
         "imu_xyz": _axes(imu_ext["xyz_true"]), "imu_rpy": _axes(imu_ext["rpy_true_rad"]),
         **{f"imu_{k}": _axes(v) for k, v in gazebo_noise_from_profile(profile["imu"]).items()},
@@ -132,6 +145,11 @@ def _setup(context, *_args, **_kwargs):  # noqa: ANN001, ANN202
         "lidar_mount_true": {"xyz": list(lidar_ext["xyz_true"]), "rpy": list(lidar_ext["rpy_true_rad"])},
         "imu_mount_true": {"xyz": list(imu_ext["xyz_true"]), "rpy": list(imu_ext["rpy_true_rad"])},
         "xacro_args": xargs, "plan": rs["setup"]["plan"].description, "path_length_m": rs["setup"]["path"].length,
+        # What the car is actually driving, for the evaluation only. The driver
+        # never reads this file; the knowledge audit of every run proves it.
+        "plant_true": {**plant, "plant_scale": plant_scale,
+                       "arm_true_m": (float(lidar_ext["xyz_true"][0]) - float(profile["lidar"]["extrinsic"]["xyz"][0]))
+                       - float(plant["rear_axle_offset_x"])},
     }, indent=1, default=float), encoding="utf-8")
 
     gz_cmd = ["gz", "sim", "-r", "--seed", str(seed)]
@@ -176,11 +194,10 @@ def _setup(context, *_args, **_kwargs):  # noqa: ANN001, ANN202
                           "imu_offset_ms": float(arg("imu_offset_ms")), "lidar_offset_ms": float(arg("lidar_offset_ms")),
                           "gyro_bias_z_extra": float(arg("gyro_bias_z_extra")), **common}]),
         Node(package=PKG, executable="sim_actuation_node", name="apex_sim_actuation", output="log",
-             parameters=[{"esc_tau_scale": float(rs["setup"]["actuator_perturbation"].get("esc_tau_scale", 1.0)),
-                          "servo_tau_scale": float(rs["setup"]["actuator_perturbation"].get("servo_tau_scale", 1.0)), **common}]),
+             parameters=[{**{k: float(v) for k, v in plant.items() if k not in ("lidar_extra_x", "rear_axle_offset_x")}, **common}]),
         ExecuteProcess(
             cmd=[str(venv_python), str(sim / "learning" / "lidar_imu_pose" / "learned_odometry_node.py"), "--ros-args",
-                 "-p", f"checkpoint:={ckpt}", "-p", f"sensor_profile:={sensor}", "-p", f"device:={arg('device')}",
+                 "-p", f"checkpoint:={ckpt}", "-p", f"sensor_profile:={sensor}", "-p", f"device:={arg('device')}", "-p", f"icp_backend:={arg('icp_backend')}", "-p", f"net_backend:={arg('net_backend')}",
                  "-p", "use_sim_time:=true", "-p", f"log_csv:={run_dir / 'estimator.csv'}", "-r", "__node:=apex_learned_odometry"],
             output="screen",
         ),
@@ -218,9 +235,17 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument("sensor_profile", default_value="APEX_real"),
         DeclareLaunchArgument("checkpoint", default_value=str(sim / "learning" / "outputs" / "real2sim_v5_10hz" / "hybrid_submap_v4" / "best_model.pt")),
         DeclareLaunchArgument("device", default_value="cpu", description="cpu (~20 ms per scan) | cuda"),
+        DeclareLaunchArgument("icp_backend", default_value="cdist",
+                              description="cdist (torch nearest neighbours) | polar (compiled, the same estimates, ~5x cheaper per scan: polar_icp.py)"),
+        DeclareLaunchArgument("net_backend", default_value="torch",
+                              description="torch | onnx (the same network run by ONNX Runtime: learning/lidar_imu_pose/onnx_net.py, <checkpoint>.onnx)"),
         DeclareLaunchArgument("imu_offset_ms", default_value="nan", description="stress test: IMU stamp offset [ms] (nan: per-seed draw of the profile)"),
         DeclareLaunchArgument("lidar_offset_ms", default_value="nan", description="stress test: LiDAR stamp offset [ms] (nan: per-seed draw of the profile)"),
         DeclareLaunchArgument("gyro_bias_z_extra", default_value="0.0", description="stress test: constant added to the published gyro z [rad/s]"),
+        DeclareLaunchArgument("plant_mismatch", default_value="true",
+                              description="draw the real plant of the run (wheelbase, axles, servo gain and centre, "
+                                          "motor start threshold, battery, bridge wheelbase) instead of using vehicle.yaml exactly"),
+        DeclareLaunchArgument("plant_scale", default_value="1.0", description="stretch of the plant draw around the nominal car (0: none, 3: three sigma)"),
         DeclareLaunchArgument("driver_set", default_value="", description="race driver config overrides, space separated section.field=value (tuning)"),
         DeclareLaunchArgument("driver", default_value="race", description="race (unseen track: reactive lap 1, map, race line) | format (dataset path)"),
         DeclareLaunchArgument("w_min", default_value="1.5", description="race: generic minimum lane width the car assumes [m]"),

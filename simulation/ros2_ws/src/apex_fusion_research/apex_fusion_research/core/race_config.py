@@ -36,7 +36,8 @@ class VehicleLimits:
     a_acc_mps2: float = 1.8
     a_dec_mps2: float = 2.4
     servo_rate_dps: float = 70.0
-    rear_offset_m: float = -0.15  # rear axle in base_link (pure-pursuit reference point)
+    rear_offset_m: float = -0.15  # rear axle in base_link (pure-pursuit reference point), prior of the identified arm
+    min_effective_mps: float = 0.07  # ESC datasheet: below this command the car does not start (prior, not a measurement)
     lookahead_min_m: float = 0.55
     lookahead_time_s: float = 0.32
     lookahead_base_m: float = 0.35
@@ -67,6 +68,7 @@ def vehicle_limits(vcfg: dict[str, Any], steer_plan_deg: float = 16.0) -> Vehicl
         wheelbase_m=float(m["wheelbase_m"]), length_m=float(m["chassis_length_m"]), width_m=float(m["footprint_width_m"]),
         steer_max_deg=float(m["steering_limit_deg"]), right_ratio=float(servo["right_ratio"]), steer_plan_deg=float(steer_plan_deg),
         a_acc_mps2=float(esc["accel_limit_mps2"]), a_dec_mps2=float(esc["decel_limit_mps2"]), servo_rate_dps=float(servo["rate_limit_deg_per_s"]),
+        min_effective_mps=float(esc["min_effective_speed_mps"]),
         lookahead_min_m=float(ctl["lookahead_min_m"]), lookahead_time_s=float(ctl["lookahead_time_s"]), lookahead_base_m=float(ctl["lookahead_base_m"]),
     )
 
@@ -202,6 +204,145 @@ class CorrectionConfig:
 
 
 @dataclass
+class AdaptiveConfig:
+    """Identification of the car's own plant, from its odometry (plant_id.py).
+
+    The priors and their sigmas are the car's datasheet and how much it may be
+    wrong by. They are also what a simulated run draws its real plant from, so
+    one table describes both what the car believes and how wrong it can be.
+
+    The sigmas of the measurements come from the estimator itself, but they are
+    sub-millimetre, so each block also carries a floor: without it the filter
+    trusts the data a hundred times more than the model deserves and chases
+    suspension and Ackermann error instead of converging. The floors below are
+    the residuals measured on recorded runs (tools/analysis/replay_adaptation.py).
+    """
+
+    enabled: bool = True
+    # --- lever arm block: [arm, slip]
+    arm_sigma: float = 0.05  # [m] prior is -rear_offset_m
+    arm_box_m: float = 0.10  # hard box around the prior
+    arm_dyaw_min_rad: float = 0.02  # a straight line says nothing about the arm
+    slip_arm_sigma: float = 0.001  # [s2/m2] rear-slip bias of the arm
+    slip_arm_max: float = 0.004
+    slip_arm_v_min_mps: float = 2.0  # the slip column is only enabled above this
+    floor_arm_m: float = 0.0015  # measured residual of the lever equation
+    n_lever: int = 30
+    # --- curvature block: [gain_left, gain_right, trim, slip]
+    gain_sigma: float = 0.30  # covers an unknown wheelbase and servo gain
+    gain_min: float = 0.55
+    gain_max: float = 1.60
+    gain_walk_per_s: float = 0.001
+    trim_sigma: float = 0.05  # [1/m] about 0.9 deg of servo centre error
+    trim_max: float = 0.25
+    trim_walk_per_s: float = 0.0005
+    # Understeer: effective gain = gain + slip * (v^2 - v_ref^2), centred on the
+    # speed the gain was identified at so the two are not the same regressor.
+    slip_prior: float = 0.0  # [s2/m2]
+    slip_sigma: float = 0.006
+    slip_min: float = -0.020
+    slip_max: float = 0.010
+    floor_kappa: float = 0.013  # [1/m] measured residual of the curvature fit
+    n_steer: int = 40
+    v_min_steer_mps: float = 0.6  # below this kappa = omega / v is ill-conditioned
+    transient_max: float = 3.0  # [(1/m)/s] command moving faster than this: lag error dominates
+    sat_frac: float = 0.97  # a command this close to the saturation is not a gain measurement
+    sat_window: int = 30
+    sat_floor_frac: float = 0.70  # the identified saturation never falls below this of the nominal
+    sign_votes: int = 20  # samples of the steering sign check before the car may adapt
+    sign_kappa_min: float = 0.15
+    # --- speed block: [gain, offset]; the start threshold is bracketed apart
+    vgain_sigma: float = 0.20
+    vgain_min: float = 0.60
+    vgain_max: float = 1.40
+    vgain_walk_per_s: float = 0.002  # the battery drifts: a random walk, not a constant
+    voff_sigma: float = 0.10  # [m/s]
+    voff_max: float = 0.25
+    floor_v: float = 0.05  # [m/s] measured residual of the speed fit
+    n_long: int = 20
+    steady_taus: float = 3.0  # quasi-steady: the command held this many tau_v
+    deadband_margin_mps: float = 0.15  # the gain is only identified well above the threshold
+    accel_max_update_mps2: float = 2.0
+    dead_rev_prior_mps: float = 0.10  # start threshold in reverse (only the real car can measure it)
+    dead_max_mps: float = 0.35
+    dead_rev_max_mps: float = 0.45
+    dead_step: float = 0.30  # fraction of the bracket closed per launch event
+    # --- actuator lags: a model bank, not filter states (they enter non-linearly)
+    tau_steer_grid_s: tuple = (0.06, 0.09, 0.12, 0.18)
+    tau_speed_grid_s: tuple = (0.15, 0.22, 0.30)
+    tau_steer_prior_s: float = 0.12  # measured minimum (servo 0.085 plus the 50 Hz hold and the knuckle loop)
+    tau_speed_prior_s: float = 0.22
+    lag_review_s: float = 3.0
+    lag_window: int = 40
+    lag_advantage: float = 0.80  # a candidate must be this much better to be selected
+    # --- measurement acceptance
+    dt_min_s: float = 0.07  # a dropped revolution is not a measurement interval
+    dt_max_s: float = 0.15
+    chi_max: float = 3.0  # a residual this many times what the filter claims is inconsistent
+    sigma_reject: float = 3.0  # drop an estimate whose sigma is this many times the nominal
+    sigma_xy_nominal_m: float = 0.0032
+    sigma_yaw_nominal_rad: float = 0.0009
+    v_min_update_mps: float = 0.5
+    history_s: float = 2.5
+    cmd_delay_s: float = 0.02  # one actuation period between publishing and acting
+    # --- watchdog: the identified model may never be worse than the datasheet
+    watchdog_hold_s: float = 2.0
+    watchdog_trips: int = 3  # after this many resets, adaptation latches off for the run
+    # --- control
+    kp_speed: float = 0.25  # proportional only: the identified gain is the integrator
+    speed_authority: float = 0.20  # fraction of the command the proportional term may add
+    launch_hold_s: float = 0.30  # standstill under a speed command before the launch ramp
+    launch_ramp_mps2: float = 0.50
+    lead_max: float = 0.25  # [1/m] cap of the servo-lag lead
+    lead_smooth_s: float = 0.06  # the lap-1 path updates at 10 Hz: differentiate a smoothed signal
+    # --- confidence schedule. Every entry may only make the car more careful
+    # than the nominal configuration, never less.
+    v_floor_frac: float = 0.85  # race v_max at zero confidence
+    a_lat_floor_frac: float = 0.80
+    lap1_v_floor_frac: float = 0.85  # lap 1 is bounded by its clearance, not by its time
+    margin_blind_add_m: float = 0.05  # extra corridor margin for the race plan
+    # Extra margins in lap 1 while the car is unsure of how it steers. The
+    # mechanism is here and tested, but it ships at zero: measured over the ten
+    # documented seeds it cost 2.3 s of the lap-1 median, which puts it outside
+    # the 44-51 s band, and the smallest clearance of the campaign did not
+    # improve by a millimetre. The confidence is only unresolved over the first
+    # 10-15 m of travel, and the minimum clearance of a lap is almost never set
+    # there. Raise them if a car turns out to be mismatched enough that the
+    # first corner is the dangerous one.
+    wall_margin_add_m: float = 0.0
+    soft_margin_add_m: float = 0.0
+    lookahead_add_m: float = 0.15  # a loop-gain error is damped by looking further ahead
+    lookahead_add_s: float = 0.10
+    sat_cmd_frac: float = 0.85  # fraction of the identified saturation usable at zero confidence
+    # --- recovery. The reactive planner has no way out of 0 feasible arcs: it
+    # stops and stays stopped. Creep forward if there is room, reverse if not.
+    recover_enabled: bool = True
+    recover_block_s: float = 1.0  # no feasible arc for this long, standing still
+    recover_creep_free_m: float = 0.6  # free path ahead above which creeping forward is enough
+    recover_creep_mps: float = 0.3  # the odometry network was trained above ~0.3 m/s
+    recover_speed_mps: float = 0.4  # reverse speed
+    recover_distance_m: float = 1.5
+    recover_timeout_s: float = 4.0
+    recover_max_per_lap: int = 2
+    recover_clearance_m: float = 0.25  # rear clearance required in the accumulated cloud
+
+    def validate(self) -> None:
+        if not self.tau_steer_grid_s or not self.tau_speed_grid_s:
+            raise ValueError("the lag grids may not be empty")
+        if min(self.tau_steer_grid_s) <= 0.0 or min(self.tau_speed_grid_s) <= 0.0:
+            raise ValueError("the lags must be positive")
+        if not 0.0 < self.gain_min < self.gain_max:
+            raise ValueError("the gain box must be positive and ordered")
+        if self.arm_box_m <= 0.0 or self.arm_sigma <= 0.0:
+            raise ValueError("the arm box and sigma must be positive")
+        if self.dt_min_s <= 0.0 or self.dt_min_s >= self.dt_max_s:
+            raise ValueError("the measurement interval box must be ordered")
+        for name in ("v_floor_frac", "a_lat_floor_frac", "lap1_v_floor_frac", "sat_cmd_frac", "sat_floor_frac"):
+            if not 0.0 < getattr(self, name) <= 1.0:
+                raise ValueError(f"{name} must be in (0, 1]: the schedule may not be optimistic")
+
+
+@dataclass
 class RaceDriverConfig:
     vehicle: VehicleLimits = field(default_factory=VehicleLimits)
     reactive: ReactiveConfig = field(default_factory=ReactiveConfig)
@@ -209,3 +350,4 @@ class RaceDriverConfig:
     planner: PlannerConfig = field(default_factory=PlannerConfig)
     race: RaceConfig = field(default_factory=RaceConfig)
     correction: CorrectionConfig = field(default_factory=CorrectionConfig)
+    adaptive: AdaptiveConfig = field(default_factory=AdaptiveConfig)

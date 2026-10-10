@@ -23,16 +23,18 @@ No track, no reference path and no ground truth enter here.
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import math
 import time
 from typing import Any, Callable
 
 import numpy as np
 
+from .adaptive import AdaptiveShaper
 from .lap_closure import LapCounter, cut_loop
 from .local_cloud import ScanAccumulator
 from .map_metrics import se2_apply, se2_compose, se2_inverse
+from .plant_id import PlantIdentifier
 from .pose_correction import CorrectionFilter
 from .race_config import RaceDriverConfig
 from .race_planner import Grid, RacePlan, plan_race
@@ -47,7 +49,12 @@ WAIT, EXPLORE, CLOSING, PLANNING, RACE, REACTIVE_ONLY, FINAL, DONE = "wait", "ex
 LOG_COLUMNS = ["t", "phase", "x_map", "y_map", "yaw_map", "x_odom", "y_odom", "yaw_odom", "speed", "v_cmd", "steer_deg", "pose_age_s",
                "corr_raw_dx", "corr_raw_dy", "corr_raw_dyaw", "corr_app_dx", "corr_app_dy", "corr_app_dyaw",
                "mode", "planner", "left_wall", "right_wall", "d_wall", "d_target", "clr_min", "n_feasible", "react_ms",
-               "lap_own", "travel", "s_race", "lat_race", "guided", "lane_known", "v_lane"]
+               "lap_own", "travel", "s_race", "lat_race", "guided", "lane_known", "v_lane",
+               # What the car has worked out about itself (plant_id.py) and what it
+               # therefore allows itself (adaptive.py). Appended, never inserted:
+               # the analysis tools read these by name.
+               "kap_des", "kap_cmd", "kap_meas", "g_left", "g_right", "k_trim", "k_slip", "arm", "g_v",
+               "u_dead", "tau_steer", "conf", "conf_arm", "v_env", "recover"]
 
 
 class ImmediateFuture:
@@ -85,6 +92,21 @@ class RaceDriverCore:
         self.acc = ScanAccumulator(r.accum_window_s, r.accum_distance_m, r.range_min_m, r.range_max_m, r.voxel_m)
         self.reactive = ReactiveDriver(cfg.vehicle, r)
         self.corr = CorrectionFilter(cfg.correction)
+        # What the car knows about its own plant, and what it does with it. Both
+        # start at the datasheet, so a car that has learned nothing drives
+        # exactly as it did before this existed.
+        self.ident = PlantIdentifier(cfg)
+        self.shaper = AdaptiveShaper(cfg)
+        self.model = self.ident.prior()
+        self.env = self.shaper.envelope(self.model)
+        self.cmd_out = (0.0, 0.0)
+        self.kappa_des = 0.0
+        self.recover = 0  # 0 none, 1 creeping forward, 2 backing out
+        self.block_since: float | None = None
+        self.recover_until = -1.0
+        self.recover_travel = 0.0
+        self.recover_count = 0
+        self.rear_clear = float("inf")
         self.phase = WAIT
         self.ready_since: float | None = None
         self.counter: LapCounter | None = None
@@ -126,6 +148,25 @@ class RaceDriverCore:
     def on_graph(self, t: float, vertices: np.ndarray) -> None:
         self.graph = (t, np.asarray(vertices, dtype=float))
 
+    def on_odometry(self, stamp: float, pose: tuple[float, float, float],
+                    sigma: tuple[float, float, float] | None, healthy: bool = True) -> None:
+        """One odometry estimate, at the rate the LiDAR turns.
+
+        This is the only channel the real car has, and the only one the
+        identification uses: a pose increment in the odometry frame with the
+        sigma the network publishes for it. Nothing here touches the map, so a
+        SLAM correction cannot disturb the identification -- the two share no
+        signal, which is what keeps them from fighting.
+        """
+        self.ident.on_estimate(stamp, pose, sigma, healthy)
+        self.model = self.ident.model()
+        self.env = self.shaper.envelope(self.model)
+        # The reference point of every candidate path is the rear axle, and
+        # where that is in the odometry frame is something the car measures
+        # rather than assumes.
+        self.reactive.set_rear_offset(self.model.rear_offset_m())
+        self.reactive.set_margins(self.env.wall_margin_add_m, self.env.soft_margin_add_m)
+
     def on_scan(self, t: float, ranges: np.ndarray, angle_min: float, angle_inc: float, pose_odom_at_stamp: tuple[float, float, float],
                 pose_odom_now: tuple[float, float, float], speed: float) -> None:
         """A de-skewed revolution (pose of base_link at its stamp in odom) and the current pose."""
@@ -140,7 +181,10 @@ class RaceDriverCore:
         t0 = time.perf_counter()
         cloud = self.acc.cloud_in(pose_odom_now)
         guide = None
-        v_cap = None
+        # Lap 1 is bounded by its clearance rather than by its time, so while
+        # the car is unsure of itself it gives up a little speed and takes more
+        # margin, and tightens as it learns.
+        v_cap = None if self.phase == RACE else self.env.lap1_v_scale * self.cfg.reactive.v_explore_mps
         if self.phase == RACE and not self._guard(t, cloud, pose_odom_now, speed):
             self.react_ms = (time.perf_counter() - t0) * 1e3
             return
@@ -149,11 +193,82 @@ class RaceDriverCore:
         cmd, state = self.reactive.step(cloud, pose_odom_now, self.travel, speed, guide, v_cap)
         self.cmd, self.state = cmd, state
         self.local_path_odom = se2_apply(pose_odom_now, cmd.path) if len(cmd.path) else None
+        self.rear_clear = self._rear_clearance(cloud)
         if self.phase in (EXPLORE, CLOSING) and self.pose_map is not None:
             self.side_log["xy"].append(self.pose_map[:2])
             self.side_log["left"].append(bool(state.left_wall))
             self.side_log["right"].append(bool(state.right_wall))
         self.react_ms = (time.perf_counter() - t0) * 1e3
+
+    def _rear_clearance(self, cloud: np.ndarray) -> float:
+        """Free distance behind the car in the accumulated cloud [m].
+
+        The A2M8 sees nothing behind the car, so this is not a measurement of
+        the space back there: it is the space the car drove through, which it
+        has already passed through once in the other direction. That is what
+        makes a bounded reverse out of a dead end safe, and it is also why the
+        reverse is bounded to the distance just travelled.
+        """
+        veh = self.cfg.vehicle
+        if cloud is None or not len(cloud):
+            return float("inf")
+        half_w = 0.5 * veh.width_m + self.cfg.reactive.wall_margin_m
+        behind = cloud[(cloud[:, 0] < -0.5 * veh.length_m) & (np.abs(cloud[:, 1]) < half_w)]
+        if not len(behind):
+            return float("inf")
+        return float(-behind[:, 0].max() - 0.5 * veh.length_m)
+
+    def _recovery(self, t: float, speed: float) -> tuple[float, float] | None:
+        """Get out of a place the planner has no path out of.
+
+        When no candidate is feasible the planner steers at the longest free
+        path and brakes, and the car then stands there for the rest of the run.
+        Creeping forward is enough when there is any room ahead; when there is
+        none, the car backs out along the way it came. Both are bounded in
+        distance and in time, and there are only so many attempts per lap.
+        """
+        a = self.cfg.adaptive
+        if not a.recover_enabled or self.phase not in (EXPLORE, CLOSING, PLANNING, RACE, REACTIVE_ONLY):
+            self.recover, self.block_since = 0, None
+            return None
+        if self.recover:
+            done = (self.travel - self.recover_travel >= a.recover_distance_m) or (t >= self.recover_until)
+            if done or (self.cmd is not None and self.cmd.feasible):
+                self.events.setdefault("recovery", []).append(
+                    {"t_end": t, "kind": self.recover, "travel_m": self.travel - self.recover_travel})
+                self.recover, self.block_since = 0, None
+                return None
+            if self.recover == 2:
+                return -a.recover_speed_mps, 0.0
+            return a.recover_creep_mps, self.steer
+        # Two different stops end a run the same way. The planner can find no
+        # feasible candidate, or it can find one and still command zero because
+        # the lane rule says the car is beyond what it can prove: it has lost
+        # the wall it was following, and the curbs are invisible. Both leave the
+        # car standing until the referee calls it stuck.
+        blocked = self.cmd is not None and (not self.cmd.feasible or self.cmd.v <= 1e-6) and abs(speed) < 0.1
+        if not blocked:
+            self.block_since = None
+            return None
+        self.block_since = t if self.block_since is None else self.block_since
+        if t - self.block_since < a.recover_block_s or self.recover_count >= a.recover_max_per_lap:
+            return None
+        free = float(self.cmd.diag.get("free", 0.0)) if self.cmd is not None else 0.0
+        lost_wall = self.state is not None and self.state.ref is None
+        # Creeping forward is only allowed where the lane is proven. Having lost
+        # the wall, the way out is backwards, over ground the car has already
+        # driven and where it could still see: that keeps the lane rule intact
+        # instead of trading it for a metre of blind progress.
+        creep = free >= a.recover_creep_free_m and not lost_wall
+        if not creep and self.rear_clear < a.recover_clearance_m:
+            return None  # nothing proven ahead and nothing proven behind: stop, as before
+        self.recover = 1 if creep else 2
+        self.recover_count += 1
+        self.recover_travel = self.travel
+        self.recover_until = t + a.recover_timeout_s
+        self.events.setdefault("recovery", []).append(
+            {"t": t, "kind": self.recover, "free_m": free, "rear_clear_m": self.rear_clear, "phase": self.phase})
+        return (-a.recover_speed_mps, 0.0) if self.recover == 2 else (a.recover_creep_mps, self.steer)
 
     # ------------------------------------------------------------ race helpers
     def _race_line_in(self, pose_odom_now: tuple[float, float, float]) -> np.ndarray:
@@ -243,7 +358,13 @@ class RaceDriverCore:
         self.events["planning"] = {"t_submit": t, "lap_path_source": source, "lap_path_points": len(loop), "map_stamp": self.grid[0],
                                    "max_correction_step_m": max((c for _, c in self.corr_log), default=0.0)}
         self.plan_inputs = (grid, loop, side)
-        self.future = self.submit(run_planner, grid, loop, self.start, side, self.cfg)
+        cfg = self.cfg
+        if self.env.blind_margin_add_m > 1e-6:
+            # The invisible lane edge is a prior, not a measurement, and an
+            # unsure plant tracks the line less well: widen the margin to it.
+            cfg = replace(cfg, planner=replace(cfg.planner, blind_margin_m=cfg.planner.blind_margin_m + self.env.blind_margin_add_m))
+        self.events["planning"]["blind_margin_m"] = cfg.planner.blind_margin_m
+        self.future = self.submit(run_planner, grid, loop, self.start, side, cfg)
         self.phase = PLANNING
 
     # ---------------------------------------------------------------- control
@@ -266,7 +387,7 @@ class RaceDriverCore:
                 self.corr_log.append((t, math.hypot(a[0] - b[0], a[1] - b[1])))
         pose_map = se2_compose(self.map_odom, pose_odom)
         self.pose_map = pose_map
-        rear_map = se2_compose(pose_map, (veh.rear_offset_m, 0.0, 0.0))
+        rear_map = se2_compose(pose_map, (self.model.rear_offset_m(), 0.0, 0.0))
         v_cmd, steer = 0.0, self.steer
 
         if self.phase == WAIT:
@@ -284,6 +405,7 @@ class RaceDriverCore:
         crossing = self.counter.update(t, pose_map, self.travel) if self.counter is not None else None
         if crossing is not None:
             self.events["crossings"].append(asdict(crossing))
+            self.recover_count = 0
         if crossing is not None and self.counter.laps >= self.laps:
             self.phase = FINAL
         elif crossing is not None and self.phase == EXPLORE:
@@ -315,6 +437,11 @@ class RaceDriverCore:
             steer = self.pursuit.steering(rear_map[0], rear_map[1], rear_map[2], speed)
             s_mod = float(self.plan.path.s[self.pursuit.idx])
             v_cmd = self.plan.speed_at(s_mod + max(0.3, 0.3 * speed))
+            # The car asks for no more speed and no more lateral grip than its
+            # confidence in its own plant justifies. Scaling the planned speed
+            # by sqrt(a_lat_eff / a_lat) is the speed map the planner would have
+            # produced with the reduced lateral acceleration.
+            v_cmd = min(v_cmd * math.sqrt(self.env.a_lat_mps2 / max(cfg.race.a_lat_mps2, 1e-6)), self.env.v_max_mps)
             if self.counter.laps == self.laps - 1:  # last lap: brake to stop just past the start line
                 dist = (self.plan.path.length - s_mod) % self.plan.path.length
                 if dist > 0.5 * self.plan.path.length:
@@ -325,10 +452,16 @@ class RaceDriverCore:
             if self.phase == RACE:
                 self.pursuit.reset(rear_map[0], rear_map[1])  # resume the line after the guided section
             if self.cmd is not None and self.local_path_odom is not None:
-                rear_odom = se2_compose(pose_odom, (veh.rear_offset_m, 0.0, 0.0))
+                rear_odom = se2_compose(pose_odom, (self.model.rear_offset_m(), 0.0, 0.0))
+                # Looking further ahead is how an unsure car buys damping; it
+                # never answers uncertainty by pushing harder.
                 ld = max(cfg.reactive.local_path_lookahead_m, 0.35 + 0.32 * speed)
+                ld += self.env.lookahead_add_m + self.env.lookahead_add_s * max(speed, 0.0)
                 steer = pursue(self.local_path_odom, rear_odom, ld, veh.wheelbase_m)
                 v_cmd = self.cmd.v
+        got_out = self._recovery(t, speed)
+        if got_out is not None:
+            v_cmd, steer = got_out
         if self.phase in (FINAL, DONE):
             v_cmd = 0.0
             if abs(speed) < 0.02:
@@ -342,32 +475,59 @@ class RaceDriverCore:
         self.steer = self.steer + max(-rate, min(rate, steer - self.steer))
         a_up = cfg.reactive.a_acc_mps2 if self.phase != RACE else cfg.race.a_acc_mps2
         self.v_out = min(v_cmd, self.v_out + a_up * max(dt, 1e-3)) if v_cmd > self.v_out else v_cmd
-        return self._out(t, self.v_out, self.steer, speed, pose_age)
+        if v_cmd < 0.0:  # backing out: the ramp above only shapes forward speed
+            self.v_out = v_cmd
+        # Everything above decided what the car wants to do. The plant decides
+        # what it has to be asked for: the steering angle is the planners'
+        # encoding of a curvature (the wheelbase in it cancels on the way out),
+        # and the identified map is inverted on that curvature.
+        self.kappa_des = math.tan(self.steer) / veh.wheelbase_m
+        v_pub, kappa_pub = self.shaper.shape(t, self.kappa_des, self.v_out, speed, self.model, self.env)
+        self.ident.push_command(t, kappa_pub, v_pub)
+        self.cmd_out = (v_pub, kappa_pub)
+        return self._out(t, v_pub, math.atan(kappa_pub * veh.wheelbase_m), speed, pose_age)
 
     def steer_command(self, steer: float) -> float:
-        """Steering angle to command so the linkage (right turns at ``right_ratio``) delivers ``steer``."""
-        veh = self.cfg.vehicle
-        cmd = steer / veh.right_ratio if steer < 0.0 else steer
-        lim = math.radians(veh.steer_max_deg)
-        return max(-lim, min(lim, cmd))
+        """Steering angle to publish, limited to what the servo can reach.
+
+        The asymmetry of the linkage used to be divided out here. It is now the
+        prior of the right-hand gain of the identified map, which is the place
+        it belongs: the car measures it instead of assuming it, and applying
+        both would correct it twice.
+        """
+        lim = math.radians(self.cfg.vehicle.steer_max_deg)
+        return max(-lim, min(lim, steer))
 
     def _out(self, t: float, v: float, steer: float, speed: float, age: float) -> tuple[float, float, list]:
         pm = self.pose_map or (float("nan"),) * 3
         po = self.pose_odom or (float("nan"),) * 3
         raw = self.map_odom_raw or (float("nan"),) * 3
         st, d = self.state, (self.cmd.diag if self.cmd is not None else {})
+        m, env = self.model, self.env
         row = [f"{t:.4f}", self.phase, f"{pm[0]:.4f}", f"{pm[1]:.4f}", f"{pm[2]:.5f}", f"{po[0]:.4f}", f"{po[1]:.4f}", f"{po[2]:.5f}",
                f"{speed:.3f}", f"{v:.3f}", f"{math.degrees(steer):.3f}", f"{age:.4f}",
                f"{raw[0]:.4f}", f"{raw[1]:.4f}", f"{raw[2]:.5f}", f"{self.map_odom[0]:.4f}", f"{self.map_odom[1]:.4f}", f"{self.map_odom[2]:.5f}",
                st.mode if st is not None else "", d.get("planner", ""), int(bool(st and st.left_wall)), int(bool(st and st.right_wall)),
                f"{d.get('d_wall', float('nan')):.3f}", f"{d.get('d_target', float('nan')):.3f}", f"{d.get('clr_min', float('nan')):.3f}",
                d.get("n_feasible", ""), f"{self.react_ms:.1f}", self.counter.laps if self.counter else 0, f"{self.travel:.3f}",
-               f"{self.s_race:.3f}", f"{self.lat_race:.4f}", int(self.guided), f"{d.get('lane_known', float('nan')):.2f}", f"{d.get('v_lane', float('nan')):.2f}"]
+               f"{self.s_race:.3f}", f"{self.lat_race:.4f}", int(self.guided), f"{d.get('lane_known', float('nan')):.2f}", f"{d.get('v_lane', float('nan')):.2f}",
+               f"{self.kappa_des:.4f}", f"{self.cmd_out[1]:.4f}", f"{self.ident.fresh_kappa(t):.4f}",
+               f"{m.gain_left:.4f}", f"{m.gain_right:.4f}", f"{m.trim:.4f}", f"{m.slip:.5f}", f"{m.arm_m:.4f}",
+               f"{m.v_gain:.4f}", f"{m.dead_mps:.4f}", f"{m.tau_steer_s:.3f}",
+               f"{m.confidence:.3f}", f"{self.ident.conf_lever:.3f}", f"{env.v_max_mps:.2f}", self.recover]
         return v, steer, row
+
+    def adaptation(self) -> dict:
+        """What the car worked out about itself, for the run report."""
+        return {**self.ident.status(), "envelope": {"v_max_mps": self.env.v_max_mps, "a_lat_mps2": self.env.a_lat_mps2,
+                                                   "lap1_v_scale": self.env.lap1_v_scale,
+                                                   "blind_margin_add_m": self.env.blind_margin_add_m,
+                                                   "kappa_limit": self.env.kappa_limit}}
 
     def status(self) -> dict:
         d = self.cmd.diag if self.cmd is not None else {}
         return {"phase": self.phase, "lap_own": self.counter.laps if self.counter else 0, "laps": self.laps, "travel_m": self.travel,
                 "mode": self.state.mode if self.state else "", "d_wall": d.get("d_wall"), "d_target": d.get("d_target"),
                 "clearance_m": d.get("clr_min"), "planner": d.get("planner"), "react_ms": self.react_ms,
-                "plan_ready": self.plan is not None, "guided": self.guided}
+                "plan_ready": self.plan is not None, "guided": self.guided,
+                "confidence": self.model.confidence, "arm_m": self.model.arm_m, "g_left": self.model.gain_left}

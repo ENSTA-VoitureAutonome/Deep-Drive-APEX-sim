@@ -214,6 +214,99 @@ def race_metrics(run: Path, cfg: dict, lap: dict) -> dict:
     return out
 
 
+def adaptation(run: Path, cfg: dict) -> dict:
+    """What the car worked out about its own plant, against what it was.
+
+    The drawn plant is in ``run_config.json`` and the car never reads it; this
+    is the evaluation side, which is allowed to, and this is the only place the
+    two meet. Reported for each quantity: the value the car ended the run with,
+    the value the run drew, and the error.
+    """
+    ev_path = run / "race_events.json"
+    if not ev_path.exists():
+        return {}
+    found = json.loads(ev_path.read_text()).get("adaptation") or {}
+    if not found:
+        return {}
+    plant = cfg.get("plant_true") or {}
+    out = {"confidence": found.get("confidence"), "conf_steer": found.get("conf_steer"), "conf_lever": found.get("conf_lever"),
+           "conf_long": found.get("conf_long"), "conf_right": found.get("conf_right"),
+           "sign_fault": found.get("sign_fault"), "watchdog_trips": found.get("trips"), "latched": found.get("latched"),
+           "updates": found.get("n"), "refused": {k: v for k, v in (found.get("rejected") or {}).items() if v},
+           "tau_steer_s": found.get("tau_steer_s"), "tau_speed_s": found.get("tau_speed_s"),
+           "envelope": found.get("envelope"), "plant_scale": plant.get("plant_scale")}
+    if "arm_true_m" in plant:
+        # Reported, not scored. The lever arm the estimator measures is the one
+        # of the signal it is given, and that signal comes from a network
+        # trained to output the increments of base_link *of the nominal car*,
+        # so what it reports stays anchored to the geometry it was trained on
+        # rather than following the geometry a run drew: over the campaign the
+        # estimate lands at 0.148 m with a 2 mm sigma whatever the draw, with
+        # no correlation to the drawn axle or LiDAR position. That is the right
+        # answer for the control, which needs the reference point of the pose it
+        # actually receives, and it means this unknown is exercised by the 2D
+        # harness (where the odometry is synthesised geometrically) and by the
+        # exactness test, not here. Comparing the two numbers would be
+        # comparing a property of the estimator with a property of the chassis.
+        out["arm_m"] = {"found": found.get("arm_m"), "drawn_geometric": plant["arm_true_m"],
+                        "sigma_m": (found.get("sigma") or {}).get("arm"),
+                        "note": "the estimator's frame is anchored by the trained network, not by the drawn geometry"}
+    # The curvature gain the car can measure is the whole chain: the wheelbase
+    # the actuation bridge assumes over the real one, the gain of the servo and
+    # the asymmetry of its linkage. Small angles, which is where the race is.
+    if {"decode_wheelbase_m", "wheelbase_m", "steer_gain"} <= set(plant):
+        chain = plant["decode_wheelbase_m"] / plant["wheelbase_m"] * plant["steer_gain"]
+        out["gain"] = {"found_left": found.get("gain_left"), "found_right": found.get("gain_right"),
+                       "drawn_left": chain, "drawn_right": chain * plant.get("right_ratio", 0.96) / 0.96,
+                       "error_left": found.get("gain_left", float("nan")) - chain}
+    if "steer_trim_deg" in plant:
+        import math as _m
+        drawn = _m.tan(_m.radians(plant["steer_trim_deg"])) / plant["wheelbase_m"]
+        out["trim"] = {"found": found.get("trim"), "drawn": drawn, "error": found.get("trim", float("nan")) - drawn}
+    if "esc_gain" in plant:
+        out["v_gain"] = {"found": found.get("v_gain"), "drawn_at_start": plant["esc_gain"],
+                         "drawn_sag_per_min": plant.get("esc_sag_per_min")}
+    return out
+
+
+def curvature_tracking(run: Path) -> dict:
+    """How well the delivered curvature followed the requested one.
+
+    This is the quantity the whole adaptive layer exists to improve. The three
+    signals are in ``driver.csv``, but they do not share an instant: the
+    request is of this control tick, while the measurement describes an
+    interval that ended about 0.2 s ago (one revolution plus the network), and
+    the steering itself lags. Compared directly, that delay alone is worth
+    0.5 1/m in a race and swamps the tracking error.
+
+    So the request is shifted back by the delay that minimises the residual,
+    and both the residual and the delay are reported: the first is the tracking
+    error, and the second is a measurement of the loop's own dead time.
+    """
+    drv = _csv(run / "driver.csv")
+    if drv is None or "kap_des" not in (drv.dtype.names or ()):
+        return {}
+    out = {}
+    for name in ("race", "explore"):
+        mask = (drv["phase"] == name) & np.isfinite(drv["kap_meas"]) & (np.abs(drv["speed"]) > 0.5)
+        if mask.sum() < 200:
+            continue
+        t = drv["t"][mask]
+        meas, des = drv["kap_meas"][mask], drv["kap_des"][mask]
+        best = None
+        for shift in np.arange(0.0, 0.52, 0.02):
+            ref = np.interp(t - shift, t, des)
+            err = meas - ref
+            rms = float(np.sqrt(np.mean(err ** 2)))
+            if best is None or rms < best[0]:
+                best = (rms, float(shift), err)
+        rms, shift, err = best
+        out[name] = {"rms_1_per_m": rms, "p95_1_per_m": float(np.percentile(np.abs(err), 95)),
+                     "bias_1_per_m": float(np.mean(err)), "delay_s": shift, "n": int(mask.sum()),
+                     "rms_unshifted_1_per_m": float(np.sqrt(np.mean((meas - des) ** 2)))}
+    return out
+
+
 def sensor_timing(run: Path) -> dict:
     imu = _csv(run / "imu_raw.csv")
     tru = _csv(run / "truth_scans.csv")
@@ -343,6 +436,8 @@ def main() -> int:
             result["race"] = race_metrics(run, result["config"], result["lap"])
         except Exception as exc:  # the rest of the evaluation stands on its own
             result["race"] = {"error": repr(exc)}
+    result["adaptation"] = adaptation(run, result["config"])
+    result["curvature_tracking"] = curvature_tracking(run)
     result["sensor_timing"] = sensor_timing(run)
     result["real_time"] = real_time(run)
     if args.offline_db is not None:
@@ -359,7 +454,8 @@ def main() -> int:
                       "slam": {k: result.get("slam", {}).get(k) for k in ("anchored", "ate")}, "control": result["control"],
                       "sensor_timing": result["sensor_timing"], "real_time": result["real_time"],
                       "race": {k: result.get("race", {}).get(k) for k in ("true_lap_times_s", "lap_min_clearance_m", "plan_truth", "race_true_deviation_m",
-                                                                           "guard_events", "knowledge_audit")}}, indent=1, default=float))
+                                                                           "guard_events", "knowledge_audit")},
+                      "adaptation": result.get("adaptation"), "curvature_tracking": result.get("curvature_tracking")}, indent=1, default=float))
     return 0
 
 

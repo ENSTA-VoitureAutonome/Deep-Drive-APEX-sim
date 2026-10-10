@@ -20,7 +20,7 @@ forward, y left. Paths are those of the rear axle (bicycle model).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import math
 
 import numpy as np
@@ -658,6 +658,41 @@ class ReactiveDriver:
         self.planner = ReactivePlanner(veh, cfg)
         self.wall_planner = WallPlanner(veh, cfg)
         self.kappa_prev = 0.0
+        self.base_wall_margin = cfg.wall_margin_m
+        self.base_c_soft = cfg.c_soft_m
+
+    def set_margins(self, wall_add_m: float, soft_add_m: float) -> None:
+        """Widen the margins while the car is unsure of how it steers.
+
+        Clearance is where lap 1 has room to spare, and time is where it does
+        not, so this is the first thing a low confidence should spend and the
+        speed cap the last.
+        """
+        cfg = self.cfg
+        want = (self.base_wall_margin + wall_add_m, self.base_c_soft + soft_add_m)
+        if abs(want[0] - cfg.wall_margin_m) < 1e-4 and abs(want[1] - cfg.c_soft_m) < 1e-4:
+            return
+        cfg = replace(cfg, wall_margin_m=want[0], c_soft_m=want[1])
+        self.cfg = cfg
+        self.tracker.cfg = cfg
+        self.planner.cfg = cfg
+        self.wall_planner.cfg = cfg
+
+    def set_rear_offset(self, rear_offset_m: float) -> None:
+        """Move the reference point of every candidate path.
+
+        The rear axle is where the lateral velocity of the odometry vanishes,
+        which the car measures rather than assumes (see ``plant_id``). The
+        candidate paths, the wall distances and the footprint checks are all
+        built around that point, so all four holders of the vehicle see it.
+        """
+        if abs(rear_offset_m - self.veh.rear_offset_m) < 1e-3:
+            return
+        veh = replace(self.veh, rear_offset_m=float(rear_offset_m))
+        self.veh = veh
+        self.tracker.veh = veh
+        self.planner.veh = veh
+        self.wall_planner.veh = veh
 
     def step(self, cloud_base: np.ndarray, pose_odom: tuple[float, float, float], travel: float, v_now: float,
              guide: np.ndarray | None = None, v_cap: float | None = None) -> tuple[ReactiveCommand, TrackerState]:

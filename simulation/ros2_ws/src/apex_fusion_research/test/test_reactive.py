@@ -1,6 +1,7 @@
 import math
 
 import numpy as np
+import pytest
 
 from apex_fusion_research.core.local_cloud import ScanAccumulator, scan_points, supported, voxel_downsample
 from apex_fusion_research.core.race_config import ReactiveConfig, VehicleLimits
@@ -348,3 +349,95 @@ def test_wheel_shadow_does_not_erase_the_wall_beside_the_car():
     beside = cloud[(np.abs(cloud[:, 0] - 1.9) < 0.3) & (np.abs(cloud[:, 1] + 1.0) < 0.05)]
     assert len(beside) >= 12  # the wall under the shadow is still there (18 points; 7 when no return carved it)
     assert acc.return_rate[shadow].max() < 0.5 and np.median(acc.return_rate[~shadow & (acc.return_rate > 0)]) > 0.9
+
+
+# --------------------------------------------------------------- recovery
+def test_the_rear_offset_reaches_every_planner():
+    """The rear axle is where the car measures it to be, and the candidate
+    paths, the wall distances and the footprint are all built around it."""
+    from apex_fusion_research.core.race_config import RaceDriverConfig
+    from apex_fusion_research.core.reactive import ReactiveDriver
+
+    cfg = RaceDriverConfig()
+    driver = ReactiveDriver(cfg.vehicle, cfg.reactive)
+    driver.set_rear_offset(-0.085)
+    for holder in (driver, driver.tracker, driver.planner, driver.wall_planner):
+        assert holder.veh.rear_offset_m == pytest.approx(-0.085)
+    driver.set_rear_offset(-0.0855)  # below the millimetre: not worth rebuilding
+    assert driver.planner.veh.rear_offset_m == pytest.approx(-0.085)
+
+
+def test_the_car_backs_out_of_a_place_with_no_feasible_path():
+    """Today a car with no feasible candidate brakes and stays there for the
+    rest of the run. It must get itself out, with a bounded manoeuvre."""
+    from apex_fusion_research.core.race_config import RaceDriverConfig
+    from apex_fusion_research.core.race_driver import EXPLORE, RaceDriverCore
+    from apex_fusion_research.core.reactive import ReactiveCommand
+
+    cfg = RaceDriverConfig()
+    core = RaceDriverCore(cfg, 3)
+    core.phase = EXPLORE
+    core.cmd = ReactiveCommand(0.0, 0.0, np.zeros((0, 2)), False, {"free": 0.1})
+    core.rear_clear = 1.0  # the car drove in through there
+    t = 0.0
+    for _ in range(60):  # a second of standing still against the block
+        t += 0.02
+        v, _steer, _row = core.control(t, (0.0, 0.0, 0.0), 0.0, None, True, 0.0)
+    assert core.recover == 2 and v < 0.0, "the car should be backing out"
+    travelled = 0.0
+    while core.recover and t < 20.0:
+        t += 0.02
+        travelled += abs(v) * 0.02
+        core.travel = travelled
+        v, _steer, _row = core.control(t, (travelled, 0.0, 0.0), -0.4, None, True, 0.0)
+    assert travelled <= cfg.adaptive.recover_distance_m + 0.2
+    assert core.recover == 0 and core.events["recovery"][-1]["kind"] == 2
+
+
+def test_it_creeps_instead_of_reversing_when_there_is_room_ahead():
+    from apex_fusion_research.core.race_config import RaceDriverConfig
+    from apex_fusion_research.core.race_driver import EXPLORE, RaceDriverCore
+    from apex_fusion_research.core.reactive import ReactiveCommand
+
+    core = RaceDriverCore(RaceDriverConfig(), 3)
+    core.phase = EXPLORE
+    core.cmd = ReactiveCommand(0.0, 0.0, np.zeros((0, 2)), False, {"free": 1.2})
+    t = 0.0
+    for _ in range(60):
+        t += 0.02
+        v, _s, _r = core.control(t, (0.0, 0.0, 0.0), 0.0, None, True, 0.0)
+    assert core.recover == 1 and v > 0.0
+
+
+def test_it_does_not_reverse_into_something_it_cannot_see():
+    """The LiDAR is blind behind the car. Without proven room back there the
+    car must stay where it is, exactly as it does today."""
+    from apex_fusion_research.core.race_config import RaceDriverConfig
+    from apex_fusion_research.core.race_driver import EXPLORE, RaceDriverCore
+    from apex_fusion_research.core.reactive import ReactiveCommand
+
+    core = RaceDriverCore(RaceDriverConfig(), 3)
+    core.phase = EXPLORE
+    core.cmd = ReactiveCommand(0.0, 0.0, np.zeros((0, 2)), False, {"free": 0.1})
+    core.rear_clear = 0.05
+    t = 0.0
+    for _ in range(120):
+        t += 0.02
+        v, _s, _r = core.control(t, (0.0, 0.0, 0.0), 0.0, None, True, 0.0)
+    assert core.recover == 0 and v == 0.0
+
+
+def test_the_margins_widen_while_the_car_is_unsure_and_return_after():
+    from apex_fusion_research.core.race_config import RaceDriverConfig
+    from apex_fusion_research.core.reactive import ReactiveDriver
+
+    cfg = RaceDriverConfig()
+    driver = ReactiveDriver(cfg.vehicle, cfg.reactive)
+    base_wall, base_soft = cfg.reactive.wall_margin_m, cfg.reactive.c_soft_m
+    driver.set_margins(0.05, 0.08)
+    for holder in (driver, driver.tracker, driver.planner, driver.wall_planner):
+        assert holder.cfg.wall_margin_m == pytest.approx(base_wall + 0.05)
+        assert holder.cfg.c_soft_m == pytest.approx(base_soft + 0.08)
+    driver.set_margins(0.0, 0.0)  # converged: back to the nominal car exactly
+    assert driver.planner.cfg.wall_margin_m == pytest.approx(base_wall)
+    assert driver.planner.cfg.c_soft_m == pytest.approx(base_soft)

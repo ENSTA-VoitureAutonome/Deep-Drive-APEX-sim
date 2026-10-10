@@ -120,6 +120,7 @@ class RaceDriverNode(Node):
         self.poses: dict[int, tuple[float, float, float]] = {}  # odometry pose at each scan stamp
         self.pred: tuple[int, tuple[float, float, float], float, float] | None = None  # stamp, pose, speed, yaw rate
         self.ready = False
+        self.estimator_ok = True
         self.plan_saved = False
         self.cmd_pub = self.create_publisher(Twist, str(gp("cmd_topic")), 20)
         self.status_pub = self.create_publisher(String, str(gp("status_topic")), 10)
@@ -156,9 +157,20 @@ class RaceDriverNode(Node):
 
     def _on_status(self, m: String) -> None:
         try:
-            self.ready = self.ready or bool(json.loads(m.data).get("ready", False))
+            payload = json.loads(m.data)
         except ValueError:
-            pass
+            return
+        self.ready = self.ready or bool(payload.get("ready", False))
+        # An estimator whose sensors are off *rate* is not a channel to
+        # identify a plant from: the model integrates the gyro over each
+        # revolution and expects the interval it was trained with. Jitter
+        # around the right rate is a different matter -- it is reported too,
+        # and in the simulation it is reported constantly because the geometry
+        # is captured at 26 Hz for a 10 Hz revolution, so treating it as
+        # disqualifying would throw away half of every run for nothing. What a
+        # noisier estimate deserves is a larger sigma, which it already has.
+        warnings = payload.get("health", {}).get("warnings") or []
+        self.estimator_ok = not any("rate" in str(w) for w in warnings)
 
     def _on_pred(self, m: Odometry) -> None:
         p = m.pose.pose
@@ -167,10 +179,18 @@ class RaceDriverNode(Node):
 
     def _on_odom(self, m: Odometry) -> None:
         p = m.pose.pose
-        self.poses[Time.from_msg(m.header.stamp).nanoseconds] = (p.position.x, p.position.y, _yaw(p.orientation))
+        stamp = Time.from_msg(m.header.stamp).nanoseconds
+        pose = (p.position.x, p.position.y, _yaw(p.orientation))
+        self.poses[stamp] = pose
         if len(self.poses) > 200:
             for k in sorted(self.poses)[:-100]:
                 del self.poses[k]
+        # This topic carries the only measurement of the car's own behaviour it
+        # has: the pose increment of one revolution, with the sigma the network
+        # publishes for it on the twist covariance (dx, dy, dyaw).
+        cov = m.twist.covariance
+        sigma = tuple(math.sqrt(max(float(cov[i]), 0.0)) for i in (0, 7, 35))
+        self.core.on_odometry(stamp * 1e-9, pose, sigma if all(sigma) else None, self.estimator_ok)
 
     def _pose_now(self, now: int) -> tuple[tuple[float, float, float], float, float] | None:
         """Predicted odometry pose advanced by its age (constant twist), speed, age [s]."""
@@ -301,6 +321,7 @@ class RaceDriverNode(Node):
             return
         ev = {k: v for k, v in self.core.events.items() if k != "config"}
         ev["scan_age_stops"] = getattr(self, "scan_age_stops", 0)  # control ticks stopped by max_scan_age_s
+        ev["adaptation"] = self.core.adaptation()
         ev["config"] = self.core.events.get("config")
         self.events_path.parent.mkdir(parents=True, exist_ok=True)
         self.events_path.write_text(json.dumps(ev, indent=1, default=float), encoding="utf-8")
