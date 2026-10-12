@@ -38,7 +38,9 @@ from .rplidar_express import (
     MotorRegulator,
     RPLidarExpressDriver,
     StampedRevolution,
+    SupplyGuard,
     bin_revolution,
+    find_undervoltage_alarm,
     legacy_measurements,
 )
 
@@ -99,7 +101,19 @@ class RPLidarPublisherNode(Node):
         self.declare_parameter("target_rate_hz", 10.0)  # the rate the learned odometry was trained at
         self.declare_parameter("motor_pwm", 520)  # start value; ~660 gave 13 Hz on this unit
         self.declare_parameter("regulate_motor", True)
+        # Soft start: the PWM climbs from motor_start_pwm to motor_pwm over motor_ramp_s.
+        self.declare_parameter("motor_start_pwm", 0)
+        self.declare_parameter("motor_ramp_s", 6.0)
         self.declare_parameter("motor_settle_s", 2.0)
+        # The car's Pi 5 has reset while the motor started: wait for power_clear_s
+        # without under-voltage first (at most power_wait_max_s), and hold the ramp
+        # while the flag is up (at most power_hold_max_s per step).
+        self.declare_parameter("power_guard", True)
+        self.declare_parameter("power_clear_s", 1.0)
+        self.declare_parameter("power_wait_max_s", 20.0)
+        self.declare_parameter("power_hold_max_s", 10.0)
+        # After a failure the driver waits 1, 2, 4 ... up to this before reopening the LiDAR.
+        self.declare_parameter("retry_max_s", 30.0)
         # Minimum USB latency, subtracted from the stamps (calibrate on the car).
         self.declare_parameter("stamp_correction_ms", 0.0)
         self.declare_parameter("drop_incomplete_revolutions", True)
@@ -146,7 +160,14 @@ class RPLidarPublisherNode(Node):
         self._target_rate_hz = float(self.get_parameter("target_rate_hz").value)
         self._motor_pwm = int(self.get_parameter("motor_pwm").value)
         self._regulate_motor = bool(self.get_parameter("regulate_motor").value)
+        self._motor_start_pwm = int(self.get_parameter("motor_start_pwm").value)
+        self._motor_ramp_s = max(0.0, float(self.get_parameter("motor_ramp_s").value))
         self._motor_settle_s = max(0.0, float(self.get_parameter("motor_settle_s").value))
+        self._retry_max_s = max(1.0, float(self.get_parameter("retry_max_s").value))
+        self._power_guard = bool(self.get_parameter("power_guard").value)
+        self._power_clear_s = max(0.0, float(self.get_parameter("power_clear_s").value))
+        self._power_wait_max_s = max(0.0, float(self.get_parameter("power_wait_max_s").value))
+        self._power_hold_max_s = max(0.0, float(self.get_parameter("power_hold_max_s").value))
         self._stamp_correction_s = float(self.get_parameter("stamp_correction_ms").value) * 1e-3
         self._drop_incomplete = bool(self.get_parameter("drop_incomplete_revolutions").value)
         self._timing_log_every_s = max(1.0, float(self.get_parameter("timing_log_every_s").value))
@@ -623,7 +644,9 @@ class RPLidarPublisherNode(Node):
 
     # --- rplidar_express backend -------------------------------------------
     def _express_loop(self) -> None:
+        failures = 0
         while not self._stop_event.is_set() and rclpy.ok():
+            session_start = time.monotonic()
             driver = RPLidarExpressDriver(
                 self._port,
                 self._baudrate,
@@ -651,8 +674,14 @@ class RPLidarPublisherNode(Node):
                         "RPLIDAR health %s (code 0x%04X)" % (HEALTH_STATUS.get(status, status), error_code)
                     )
                 std_us, express_us = driver.get_sample_rate()
-                pwm_supported = driver.supports_motor_pwm()
-                if not pwm_supported:
+                pwm_flag = driver.supports_motor_pwm()
+                pwm_supported = pwm_flag is not False
+                if pwm_flag is None:
+                    self.get_logger().info(
+                        "The LiDAR does not answer the motor-control query; regulating the PWM anyway "
+                        "(the timing log shows whether the rate follows it)."
+                    )
+                elif not pwm_flag:
                     self.get_logger().error(
                         "The LiDAR adapter reports no PWM motor control: the rotation rate cannot be set "
                         "and will not be %.1f Hz." % self._target_rate_hz
@@ -662,7 +691,36 @@ class RPLidarPublisherNode(Node):
                     self._motor_pwm,
                     enabled=self._regulate_motor and pwm_supported,
                 )
-                driver.start_motor(regulator.pwm)
+                guard = SupplyGuard(
+                    find_undervoltage_alarm() if self._power_guard else None,
+                    clear_s=self._power_clear_s,
+                    wait_max_s=self._power_wait_max_s,
+                    hold_max_s=self._power_hold_max_s,
+                    sleep=self._sleep_with_stop,
+                )
+                if guard.alarm_path is None:
+                    self.get_logger().info("No under-voltage flag to watch: plain soft start")
+                elif not guard.wait_clear():
+                    self.get_logger().warning(
+                        "The Pi stayed in under-voltage for %.0f s; starting the motor anyway "
+                        "(a reset now means the supply cannot carry the LiDAR motor)" % self._power_wait_max_s
+                    )
+                self.get_logger().info(
+                    "Motor soft start: PWM %d -> %d over %.1f s"
+                    % (min(self._motor_start_pwm, regulator.pwm), regulator.pwm, self._motor_ramp_s)
+                )
+                ramp_t0 = time.monotonic()
+                driver.start_motor(
+                    regulator.pwm,
+                    start_pwm=self._motor_start_pwm,
+                    ramp_s=self._motor_ramp_s,
+                    wait=guard.ramp_wait,
+                )
+                if guard.alarm_path is not None:
+                    self.get_logger().info(
+                        "Motor ramp done in %.1f s; under-voltage seen in %d polls"
+                        % (time.monotonic() - ramp_t0, guard.alarms)
+                    )
                 self._sleep_with_stop(self._motor_settle_s)
                 pipeline = ExpressScanPipeline(
                     express_us * 1e-6,
@@ -698,10 +756,16 @@ class RPLidarPublisherNode(Node):
                             driver.set_pwm(new_pwm)
                     self._maybe_log_express(pipeline, regulator)
             except Exception as exc:
+                if time.monotonic() - session_start > 60.0:
+                    failures = 0
+                failures += 1
+                delay = min(self._retry_max_s, 2.0 ** (failures - 1))
                 self.get_logger().error(
-                    "RPLIDAR Express failure (port=%s baudrate=%d): %s" % (self._port, self._baudrate, exc)
+                    "RPLIDAR Express failure (port=%s baudrate=%d): %s; retry %d in %.0f s"
+                    % (self._port, self._baudrate, exc, failures, delay)
                 )
-                self._sleep_with_stop(1.0)
+                driver.close()
+                self._sleep_with_stop(delay)
             finally:
                 driver.close()
 

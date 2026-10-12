@@ -1,0 +1,56 @@
+# The real car's own description, as `core/race_config.vehicle_limits()` reads it.
+#
+# Only the four sections that function needs: model, esc, servo, controller.
+# There is deliberately no `calibration` section (the maximum stable speed per
+# track is track knowledge the car must not have) and no `xacro` path.
+#
+# Provenance of every value:
+#   [meas]   measured on the car
+#   [bridge] real_vehicle/ros2_ws/src/apex_telemetry/config/apex_params.yaml
+#   [servo]  derived from the servo duty window, see `steering_limit_deg`
+#   [plan]   chosen with the speed envelope of 2026-10-10 (option B)
+#   [prior]  a prior for the identifier, not a measurement: plant_id.py owns it
+
+model:
+  chassis_length_m: 0.46        # [meas]
+  chassis_width_m: 0.28         # [meas]
+  footprint_width_m: 0.32       # [meas] outer faces of the wheels
+  wheelbase_m: 0.30             # [bridge] cmd_vel_to_apex_actuation_node wheelbase_m
+  # The steering duty window is [5.0, 10.0] % about a centre of 8.2 % (centre
+  # trim 0.7), so the servo reaches -23.0 deg one way and +12.96 deg the other
+  # (actuation.py:35-44,73-89). 18 deg is therefore not symmetrically
+  # reachable, and a controller that believes it is will plan corners it cannot
+  # drive. 12.5 deg is the symmetric limit, rounded down, enforced in the
+  # driver, in the bridge and in the servo. Raising it means widening the duty
+  # window (steering_dc_max 10.70) *after* the static protractor sweep.
+  steering_limit_deg: 12.5       # [servo] -> kappa_max = tan(12.5)/0.30 = 0.739 1/m, R_min 1.35 m
+
+esc:
+  response_tau_s: 0.22          # [prior] tau_speed_prior_s of the identifier
+  accel_limit_mps2: 0.60        # [plan]
+  decel_limit_mps2: 1.20        # [plan]
+  top_speed_mps: 0.95           # [plan] 45 % of ESC span at 33 %/(m/s) over a 15 % offset
+  # Residual start threshold left by the bridge's affine map: the gauge offset
+  # (15 %) sits below the believed threshold (17 %), so (17-15)/33 = 0.061 m/s
+  # of command produce no motion. The identifier brackets the true value from
+  # the launches (plant_id.py:542-569); this is only its starting point.
+  min_effective_speed_mps: 0.07  # [prior]
+  command_rate_hz: 50.0         # [bridge] the driver's control rate
+
+servo:
+  response_tau_s: 0.085         # [prior] part of tau_steer_prior_s
+  rate_limit_deg_per_s: 65.0    # [bridge] steering_rate_limit_deg_per_s
+  left_ratio: 1.0
+  # Asymmetry of the linkage. 1.0 until the static sweep (ladder step S)
+  # measures it; it is also the prior of the identified gain_right, which the
+  # adaptive layer re-measures while driving.
+  right_ratio: 1.0              # [prior]
+
+controller:                     # pure pursuit on the race line
+  # Lookahead = max(min, base + time * speed). At 0.70 m/s the simulation's
+  # 0.55 / 0.35 / 0.32 would look 0.57 m ahead on a 1.35 m turning radius --
+  # almost half a corner of a 1 m lane.
+  lookahead_min_m: 0.40         # [plan]
+  lookahead_time_s: 0.32
+  lookahead_base_m: 0.30        # [plan]
+  reference_point: rear_axle    # x = -0.15 m in base_link, prior of the identified lever arm

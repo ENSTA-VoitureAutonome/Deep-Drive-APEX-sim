@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>apex_race</name>
+  <version>0.1.0</version>
+  <description>Race driver of the real car on an unknown track: lap-1 reactive driving, race line on its own SLAM map, and online identification of its own plant. The driving logic is byte-identical to the simulation's (test/test_core_parity.py).</description>
+  <maintainer email="todo@example.com">APEX Team</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>visualization_msgs</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-scipy</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <!-- The map this driver plans on. Installed in the image; the stack refuses
+       to start without it. -->
+  <exec_depend>slam_toolbox</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

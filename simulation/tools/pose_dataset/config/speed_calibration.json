@@ -4713,6 +4713,18 @@
      "wall_s": 5.47498631477356
     }
    ]
+  },
+  "zs_real_narrow_oval": {
+   "v_max_stable_mps": 2.5,
+   "note": "not calibrated: these tracks exist for the real car's 2D-harness envelope, which never reads this file (the race driver may not know a per-track speed). The value only feeds the reference trajectory of the format driver, and is the one measured on zs_real_track_replica, the same 1.1 m corridor."
+  },
+  "zs_real_open_corner_oval": {
+   "v_max_stable_mps": 2.5,
+   "note": "not calibrated: these tracks exist for the real car's 2D-harness envelope, which never reads this file (the race driver may not know a per-track speed). The value only feeds the reference trajectory of the format driver, and is the one measured on zs_real_track_replica, the same 1.1 m corridor."
+  },
+  "zs_real_wide_oval": {
+   "v_max_stable_mps": 2.5,
+   "note": "not calibrated: these tracks exist for the real car's 2D-harness envelope, which never reads this file (the race driver may not know a per-track speed). The value only feeds the reference trajectory of the format driver, and is the one measured on zs_real_track_replica, the same 1.1 m corridor."
   }
  }
 }

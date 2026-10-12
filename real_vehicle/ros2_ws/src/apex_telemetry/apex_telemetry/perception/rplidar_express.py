@@ -34,7 +34,9 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+import glob
 import math
+import os
 import statistics
 import time
 from typing import Callable, Optional
@@ -551,6 +553,98 @@ class MotorRegulator:
         return new
 
 
+def motor_ramp(start_pwm: int, target_pwm: int, ramp_s: float, step_s: float = 0.1) -> list[int]:
+    """PWM values of a linear soft start, one every ``step_s``, ending at ``target_pwm``.
+
+    ``start_pwm`` itself is not included (it is applied before the ramp).
+    """
+    start, target = int(start_pwm), int(target_pwm)
+    if ramp_s <= 0.0 or step_s <= 0.0 or start >= target:
+        return [target]
+    steps = max(1, int(math.ceil(ramp_s / step_s)))
+    return [int(round(start + (target - start) * (k + 1) / steps)) for k in range(steps)]
+
+
+def find_undervoltage_alarm(pattern: str = "/sys/class/hwmon/hwmon*") -> Optional[str]:
+    """The Raspberry Pi's live under-voltage flag (hwmon ``rpi_volt``), or None off a Pi."""
+    for hwmon in sorted(glob.glob(pattern)):
+        try:
+            with open(os.path.join(hwmon, "name"), encoding="ascii") as fh:
+                if fh.read().strip() != "rpi_volt":
+                    continue
+        except OSError:
+            continue
+        alarm = os.path.join(hwmon, "in0_lcrit_alarm")
+        if os.path.exists(alarm):
+            return alarm
+    return None
+
+
+class SupplyGuard:
+    """Keeps the motor start from pulling the Pi's 5 V rail down further.
+
+    The car's Pi 5 supply sits at the under-voltage limit and the Pi has
+    reset while the LiDAR motor started. Before the start, ``wait_clear``
+    waits for a moment without under-voltage; during the ramp, ``ramp_wait``
+    holds the PWM where it is while the flag is up. Both give up after their
+    limit, so a supply that is always marginal delays the start but never
+    blocks it. Without the flag (not a Pi) both are plain waits.
+    """
+
+    def __init__(
+        self,
+        alarm_path: Optional[str],
+        *,
+        clear_s: float = 1.0,
+        wait_max_s: float = 20.0,
+        hold_max_s: float = 10.0,
+        poll_s: float = 0.05,
+        sleep: Callable[[float], None] = time.sleep,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self.alarm_path = alarm_path
+        self.clear_s = clear_s
+        self.wait_max_s = wait_max_s
+        self.hold_max_s = hold_max_s
+        self.poll_s = poll_s
+        self._sleep = sleep
+        self._clock = clock
+        self.alarms = 0  # polls that saw the flag up
+
+    def undervoltage(self) -> Optional[bool]:
+        if not self.alarm_path:
+            return None
+        try:
+            with open(self.alarm_path, encoding="ascii") as fh:
+                low = fh.read().strip() not in ("", "0")
+        except OSError:
+            return None
+        self.alarms += int(low)
+        return low
+
+    def wait_clear(self) -> bool:
+        """True once the flag stayed down for ``clear_s``; False if ``wait_max_s`` ran out first."""
+        if self.undervoltage() is None:
+            return True
+        start = clear_since = self._clock()
+        while True:
+            now = self._clock()
+            if self.undervoltage():
+                clear_since = now
+            elif now - clear_since >= self.clear_s:
+                return True
+            if now - start >= self.wait_max_s:
+                return False
+            self._sleep(self.poll_s)
+
+    def ramp_wait(self, step_s: float) -> None:
+        """One ramp step: ``step_s``, then up to ``hold_max_s`` more while the flag is up."""
+        self._sleep(step_s)
+        start = self._clock()
+        while self.undervoltage() and self._clock() - start < self.hold_max_s:
+            self._sleep(self.poll_s)
+
+
 # --- scan layout ---------------------------------------------------------------
 def laser_angle_deg(device_deg: np.ndarray, heading_offset_deg: float) -> np.ndarray:
     """Laser-frame angle (x forward, counter-clockwise) of a device angle.
@@ -681,12 +775,16 @@ class RPLidarExpressDriver:
     def get_sample_rate(self) -> tuple[int, int]:
         return parse_sample_rate(self._request(CMD_GET_SAMPLERATE, ANS_TYPE_SAMPLE_RATE))
 
-    def supports_motor_pwm(self) -> bool:
-        """Accessory-board flag of the A2/A3 adapter (SDK checkMotorCtrlSupport)."""
+    def supports_motor_pwm(self) -> Optional[bool]:
+        """Accessory-board flag of the A2/A3 adapter (SDK checkMotorCtrlSupport); None without an answer.
+
+        The car's A2M8 (firmware 1.25) never answers this query, yet its motor
+        follows SET_MOTOR_PWM (PWM 520 -> 10.1 Hz, 660 -> 13 Hz).
+        """
         try:
             payload = self._request(CMD_GET_ACC_BOARD_FLAG, ANS_TYPE_ACC_BOARD_FLAG, (0).to_bytes(4, "little"))
         except (TimeoutError, ValueError):
-            return False
+            return None
         return bool(int.from_bytes(payload[0:4], "little") & ACC_BOARD_FLAG_MOTOR_CTRL_SUPPORT)
 
     def set_pwm(self, pwm: int) -> None:
@@ -699,11 +797,30 @@ class RPLidarExpressDriver:
         except OSError:
             pass  # not a real serial port (tests, pseudo-terminals)
 
-    def start_motor(self, pwm: int) -> None:
+    def start_motor(
+        self,
+        pwm: int,
+        *,
+        start_pwm: int | None = None,
+        ramp_s: float = 0.0,
+        step_s: float = 0.1,
+        wait: Callable[[float], object] = time.sleep,
+    ) -> None:
         # DTR low enables the motor on the adapter; the PWM command sets its speed
-        # (as the rplidar python library and the SDK do).
+        # (as the rplidar python library and the SDK do). With a ramp the motor
+        # starts at ``start_pwm`` and climbs to ``pwm`` over ``ramp_s``: a step to
+        # the working PWM draws the motor's start-up current from the Pi's USB
+        # port at once.
+        ramp = motor_ramp(start_pwm if start_pwm is not None else pwm, pwm, ramp_s, step_s)
+        first = int(pwm) if len(ramp) == 1 else int(start_pwm)
+        self.set_pwm(first)
         self._set_dtr(False)
-        self.set_pwm(pwm)
+        self.set_pwm(first)
+        if len(ramp) == 1:
+            return
+        for value in ramp:
+            wait(step_s)
+            self.set_pwm(value)
 
     def stop_motor(self) -> None:
         self.set_pwm(0)

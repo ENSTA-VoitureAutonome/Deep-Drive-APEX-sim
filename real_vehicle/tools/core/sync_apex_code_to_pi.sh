@@ -3,7 +3,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APEX_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-REMOTE_TARGET="${1:-ensta@raspberrypi:/home/ensta/AiAtonomousRc/real_vehicle/}"
+# The deployed tree on the car is APEX/, not real_vehicle/: that is where the
+# container mounts its workspace from (`docker inspect apex_lidar` ->
+# /home/ensta/AiAtonomousRc/APEX/ros2_ws -> /work/ros2_ws). Syncing to
+# .../real_vehicle/ creates a second tree that nothing runs.
+REMOTE_TARGET="${1:-${APEX_PI_TARGET:-ensta@raspberrypi:/home/ensta/AiAtonomousRc/APEX/}}"
 
 shift || true
 
@@ -27,6 +31,8 @@ rsync -av \
   --exclude 'apex_static_curve/' \
   --exclude 'ros2_ws/apex_curve_track/' \
   --exclude 'ros2_ws/apex_recognition_tour/' \
+  --exclude 'ros2_ws/apex_race/' \
+  --exclude 'data/real2sim_capture/' \
   --exclude 'ros2_ws/build/' \
   --exclude 'ros2_ws/install/' \
   --exclude 'ros2_ws/log/' \

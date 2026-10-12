@@ -49,6 +49,7 @@ from ..core.race_driver import DONE, LOG_COLUMNS, RaceDriverCore
 from ..core.race_planner import Grid, save_plan
 from ..core.sim_paths import ensure_tools_path
 from ._common import LATCHED_QOS, ConfigParameters, json_msg
+from .estimator_health import estimator_ok
 
 MAP_QOS = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
 
@@ -91,6 +92,8 @@ class RaceDriverNode(Node):
         dp("log_csv", "")
         dp("events_json", "")
         dp("inputs_csv", "")  # lap-1 scans as the reactive driver received them (offline replay: tools/analysis/replay_reactive.py)
+        dp("imu_rate_hz", 104.0)  # calibration rates of the health gate (sensors.yaml APEX_real)
+        dp("lidar_rate_hz", 10.0)
         dp("planner_in_process", False)  # true: plan in the node's process (debug); false: a separate process
         self.params = ConfigParameters(self, RaceDriverConfig)
         gp = lambda n: self.get_parameter(n).value  # noqa: E731
@@ -105,6 +108,7 @@ class RaceDriverNode(Node):
         self.frames = {k: str(gp(f"{k}_frame")) for k in ("map", "odom", "base", "laser")}
         self.max_age = float(gp("max_pose_age_s"))
         self.max_scan_age = float(gp("max_scan_age_s"))
+        self.rates = (float(gp("imu_rate_hz")), float(gp("lidar_rate_hz")))
         self.scan_age_stops = 0
         self.out_dir = Path(str(gp("output_dir"))) if str(gp("output_dir")) else None
         self.events_path = Path(str(gp("events_json"))) if str(gp("events_json")) else None
@@ -120,7 +124,8 @@ class RaceDriverNode(Node):
         self.poses: dict[int, tuple[float, float, float]] = {}  # odometry pose at each scan stamp
         self.pred: tuple[int, tuple[float, float, float], float, float] | None = None  # stamp, pose, speed, yaw rate
         self.ready = False
-        self.estimator_ok = True
+        self.estimator_ok = False  # until the health report says the rates are right
+        self.estimator_reason = "no health report"
         self.plan_saved = False
         self.cmd_pub = self.create_publisher(Twist, str(gp("cmd_topic")), 20)
         self.status_pub = self.create_publisher(String, str(gp("status_topic")), 10)
@@ -169,8 +174,14 @@ class RaceDriverNode(Node):
         # is captured at 26 Hz for a 10 Hz revolution, so treating it as
         # disqualifying would throw away half of every run for nothing. What a
         # noisier estimate deserves is a larger sigma, which it already has.
-        warnings = payload.get("health", {}).get("warnings") or []
-        self.estimator_ok = not any("rate" in str(w) for w in warnings)
+        #
+        # This used to search the word "rate" in those warnings. None of the
+        # three strings `_Health.report()` can emit contains it, so the test was
+        # always true; the gate is on the measured rates (estimator_health.py).
+        ok, reason = estimator_ok(payload.get("health"), *self.rates)
+        if ok != self.estimator_ok:
+            self.get_logger().info(f"estimator usable for identification: {ok}" + (f" ({reason})" if reason else ""))
+        self.estimator_ok, self.estimator_reason = ok, reason
 
     def _on_pred(self, m: Odometry) -> None:
         p = m.pose.pose
@@ -327,7 +338,8 @@ class RaceDriverNode(Node):
         self.events_path.write_text(json.dumps(ev, indent=1, default=float), encoding="utf-8")
 
     def _publish_status(self) -> None:
-        self.status_pub.publish(json_msg({**self.core.status(), "scan_age_stops": self.scan_age_stops}))
+        self.status_pub.publish(json_msg({**self.core.status(), "scan_age_stops": self.scan_age_stops,
+                                          "estimator_usable": self.estimator_ok, "estimator_reason": self.estimator_reason}))
 
     def destroy_node(self) -> None:
         self._write_events()

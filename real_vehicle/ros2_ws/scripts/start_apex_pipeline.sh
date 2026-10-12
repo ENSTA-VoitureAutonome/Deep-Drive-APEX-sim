@@ -26,6 +26,21 @@ ENABLE_RECOGNITION_TOUR_TRACKER="${APEX_ENABLE_RECOGNITION_TOUR_TRACKER:-0}"
 ENABLE_CMDVEL_ACTUATION_BRIDGE="${APEX_ENABLE_CMDVEL_ACTUATION_BRIDGE:-0}"
 ENABLE_MANUAL_CONTROL_BRIDGE="${APEX_ENABLE_MANUAL_CONTROL_BRIDGE:-0}"
 ENABLE_RECOGNITION_SESSION_MANAGER="${APEX_ENABLE_RECOGNITION_SESSION_MANAGER:-0}"
+# The race stack: learned odometry -> slam_toolbox -> race driver. It is the
+# sole owner of /apex/cmd_vel_track, so it turns the legacy autonomy off below.
+ENABLE_RACE_STACK="${APEX_ENABLE_RACE_STACK:-0}"
+# The two sensor drivers. Off only when a recording is replayed into the graph
+# instead (APEX_REPLAY_FIXTURE), which is how the full state machine is tested
+# with the car switched off.
+# The race stack needs the bridge to present a clean affine plant, otherwise the
+# identifier measures the bridge's own ramp instead of the car.
+BRIDGE_PROFILE="${APEX_BRIDGE_PROFILE:-}"
+if [[ -z "${BRIDGE_PROFILE}" && "${APEX_ENABLE_RACE_STACK:-0}" == "1" ]]; then
+  BRIDGE_PROFILE="affine"
+fi
+BRIDGE_MAX_STEERING_DEG="${APEX_BRIDGE_MAX_STEERING_DEG:-}"
+ENABLE_NANO="${APEX_ENABLE_NANO:-1}"
+ENABLE_LIDAR="${APEX_ENABLE_LIDAR:-1}"
 ENABLE_OFFLINE_SUBMAP_REFINER="${APEX_ENABLE_OFFLINE_SUBMAP_REFINER:-0}"
 ENABLE_FIXED_MAP_ROUTE_PLANNER="${APEX_ENABLE_FIXED_MAP_ROUTE_PLANNER:-0}"
 ENABLE_FIXED_MAP_PUBLISHER="${APEX_ENABLE_FIXED_MAP_PUBLISHER:-0}"
@@ -284,6 +299,12 @@ cleanup() {
   done
   wait || true
   force_motor_neutral_from_params
+  if [[ -n "${GOVERNOR_WAS:-}" ]]; then
+    for policy in /sys/devices/system/cpu/cpufreq/policy*; do
+      echo "${GOVERNOR_WAS}" > "${policy}/scaling_governor" 2>/dev/null || true
+    done
+    echo "[APEX] CPU governor restored to ${GOVERNOR_WAS}"
+  fi
   force_steering_center_from_params
 }
 
@@ -408,9 +429,13 @@ if ! is_legacy_like || is_safe_like; then
     NANO_CMD+=(-p "no_data_reconnect_s:=${SERIAL_NO_DATA_RECONNECT_S}")
   fi
 fi
-"${NANO_CMD[@]}" &
-track_pid "nano serial node" "$!"
-if [[ "${STAGGERED_STARTUP}" == "1" ]]; then
+if [[ "${ENABLE_NANO}" == "1" ]]; then
+  "${NANO_CMD[@]}" &
+  track_pid "nano serial node" "$!"
+else
+  echo "[APEX] Nano serial node disabled (the IMU stream comes from a replay)"
+fi
+if [[ "${STAGGERED_STARTUP}" == "1" && "${ENABLE_NANO}" == "1" ]]; then
   echo "[APEX] Startup staging: waiting ${SERIAL_WARMUP_S}s after Nano serial node"
   sleep "${SERIAL_WARMUP_S}"
 fi
@@ -429,16 +454,20 @@ else
   echo "[APEX] Kinematics/raw odometry disabled for this run"
 fi
 
-python3 -m apex_telemetry.perception.rplidar_publisher_node \
-  --ros-args \
-  --params-file "${PARAMS_FILE}" \
-  -p "port:=${APEX_LIDAR_PORT:-/dev/ttyUSB0}" \
-  -p "baudrate:=${APEX_LIDAR_BAUDRATE:-115200}" \
-  -p "source_backend:=${APEX_LIDAR_BACKEND:-rplidar_express}" &
-track_pid "RPLidar publisher" "$!"
-if [[ "${STAGGERED_STARTUP}" == "1" ]]; then
-  echo "[APEX] Startup staging: waiting ${LIDAR_STARTUP_SETTLE_S}s for LiDAR motor spin-up"
-  sleep "${LIDAR_STARTUP_SETTLE_S}"
+if [[ "${ENABLE_LIDAR}" == "1" ]]; then
+  python3 -m apex_telemetry.perception.rplidar_publisher_node \
+    --ros-args \
+    --params-file "${PARAMS_FILE}" \
+    -p "port:=${APEX_LIDAR_PORT:-/dev/ttyUSB0}" \
+    -p "baudrate:=${APEX_LIDAR_BAUDRATE:-115200}" \
+    -p "source_backend:=${APEX_LIDAR_BACKEND:-rplidar_express}" &
+  track_pid "RPLidar publisher" "$!"
+  if [[ "${STAGGERED_STARTUP}" == "1" ]]; then
+    echo "[APEX] Startup staging: waiting ${LIDAR_STARTUP_SETTLE_S}s for LiDAR motor spin-up"
+    sleep "${LIDAR_STARTUP_SETTLE_S}"
+  fi
+else
+  echo "[APEX] RPLidar publisher disabled (the scan stream comes from a replay)"
 fi
 
 if [[ "${ENABLE_IMU_LIDAR_FUSION}" == "1" ]]; then
@@ -751,6 +780,13 @@ if [[ "${ENABLE_CMDVEL_ACTUATION_BRIDGE}" == "1" ]]; then
   if [[ -n "${BRIDGE_ACTUATION_BACKEND}" ]]; then
     CMD+=(-p "actuation_backend:=${BRIDGE_ACTUATION_BACKEND}")
   fi
+  if [[ -n "${BRIDGE_PROFILE}" ]]; then
+    CMD+=(-p "actuation_profile:=${BRIDGE_PROFILE}")
+    echo "[APEX] CmdVel bridge profile: ${BRIDGE_PROFILE}"
+  fi
+  if [[ -n "${BRIDGE_MAX_STEERING_DEG}" ]]; then
+    CMD+=(-p "max_steering_deg:=$(normalize_float_override "${BRIDGE_MAX_STEERING_DEG}")")
+  fi
   "${CMD[@]}" &
   track_pid "cmd_vel actuation bridge" "$!"
   startup_stage_sleep "cmd_vel bridge"
@@ -789,7 +825,169 @@ ros2 run tf2_ros static_transform_publisher \
   --child-frame-id "${APEX_LIDAR_FRAME:-laser}" &
 track_pid "laser static transform publisher" "$!"
 
+if [[ "${ENABLE_RACE_STACK}" == "1" ]]; then
+  # --------------------------------------------------------------- race stack
+  # Three processes, each pinned to its own core (the Pi 5 has four and the
+  # whole architecture was sized against that split):
+  #   0  LiDAR + actuation bridge (next to the ttyUSB0 interrupt)
+  #   1  IMU + learned odometry   (the measured /odom_rt configuration)
+  #   2  slam_toolbox             (Ceres bursts get a core of their own)
+  #   3  race driver              (50 Hz control, 10 Hz reactive planner)
+  # and the planner worker is pinned to {2,3} at nice 10 by the driver itself.
+  RACE_RUN_DIR="${APEX_RACE_RUN_DIR:-/work/ros2_ws/apex_race/$(date +%Y%m%d_%H%M%S)}"
+  mkdir -p "${RACE_RUN_DIR}"
+  echo "[APEX] Race stack run directory: ${RACE_RUN_DIR}"
+
+  # Wait until the LiDAR is actually turning before loading the CPU.
+  #
+  # The motor's ramp takes ~11 s and browns out the 5 V rail while it does
+  # (the node reports "under-voltage seen in N polls"). Starting the estimator
+  # -- which pins a core at 100 % through its numba and ONNX warm-up -- and
+  # raising the governor at the same time is enough to keep the motor from
+  # reaching speed: the LiDAR then never starts its Express scan and the whole
+  # stack waits for scans that never come. Measured on this car on 2026-10-11.
+  if [[ "${ENABLE_LIDAR}" == "1" && -z "${APEX_REPLAY_FIXTURE:-}" ]]; then
+    echo "[APEX] Waiting for the LiDAR to reach speed before loading the CPU"
+    LIDAR_READY=0
+    for _ in $(seq 1 "${APEX_RACE_LIDAR_WAIT_S:-60}"); do
+      if timeout 2 ros2 topic echo /lidar/scan_raw --once >/dev/null 2>&1; then
+        LIDAR_READY=1
+        break
+      fi
+      sleep 1
+    done
+    if [[ "${LIDAR_READY}" != "1" ]]; then
+      echo "[APEX] REFUSING to start the race stack: no /lidar/scan_raw after ${APEX_RACE_LIDAR_WAIT_S:-60}s." >&2
+      echo "[APEX] The motor usually fails to reach speed because the 5 V supply sags; check" >&2
+      echo "[APEX]   vcgencmd get_throttled   and   ./tools/lidar/apex_lidar_only.sh power" >&2
+      exit 1
+    fi
+    echo "[APEX] LiDAR is turning"
+  fi
+
+  # The CPU governor is left alone by default, and that is a measurement, not
+  # an oversight. Forcing `performance` pins all four cores at 2.4 GHz, and on
+  # this car that is enough to put the 5 V rail into live under-voltage with
+  # the LiDAR motor turning (get_throttled 0x50005): the motor then never
+  # reaches speed and the stack gets no scans at all. At `ondemand` and idle
+  # the same rail reads 0x50000 -- historical bits only. The Pi 5 boosts to
+  # 2.4 GHz under load by itself; set APEX_SET_GOVERNOR=performance only once
+  # the supply can take it, and only if the measured latency asks for it.
+  if [[ -n "${APEX_SET_GOVERNOR:-}" ]]; then
+    GOVERNOR_WAS="$(cat /sys/devices/system/cpu/cpufreq/policy0/scaling_governor 2>/dev/null || true)"
+    for policy in /sys/devices/system/cpu/cpufreq/policy*; do
+      echo "${APEX_SET_GOVERNOR}" > "${policy}/scaling_governor" 2>/dev/null || true
+    done
+    echo "[APEX] CPU governor: ${GOVERNOR_WAS:-unknown} -> $(cat /sys/devices/system/cpu/cpufreq/policy0/scaling_governor 2>/dev/null || echo unknown)"
+  fi
+  if command -v vcgencmd >/dev/null 2>&1; then
+    THROTTLED="$(vcgencmd get_throttled | cut -d= -f2)"
+    echo "[APEX] Power: get_throttled=${THROTTLED}, $(vcgencmd measure_temp)"
+    if (( $(( THROTTLED & 0x1 )) != 0 )); then
+      # The LiDAR motor alone pulls this rail under 4.63 V on this car. A Pi
+      # that browns out mid-run takes the estimator, the SLAM and the driver
+      # with it, and the car coasts until the bridge's watchdog fires. That is
+      # tolerable while nothing can move; it is not tolerable once the ESC can
+      # be commanded.
+      if [[ "${ENABLE_CMDVEL_ACTUATION_BRIDGE}" == "1" ]]; then
+        echo "[APEX] REFUSING to arm the car: live under-voltage (get_throttled=${THROTTLED})." >&2
+        echo "[APEX] Fix the 5 V supply before any motion test." >&2
+        exit 1
+      fi
+      echo "[APEX] WARNING: live under-voltage (get_throttled=${THROTTLED}). Static runs only until the supply is fixed." >&2
+    fi
+  fi
+  FREE_KB="$(df --output=avail -k / | tail -1 | tr -d ' ')"
+  if (( FREE_KB < 1048576 )); then
+    echo "[APEX] REFUSING to start the race stack: only $((FREE_KB / 1024)) MB free on /" >&2
+    exit 1
+  fi
+
+  # The IMU mount, which only the race stack needs (the estimator consumes the
+  # IMU in the body frame, but slam_toolbox and RViz want the frame to exist).
+  ros2 run tf2_ros static_transform_publisher \
+    --x "${APEX_IMU_X_M:-0.02}" --y "${APEX_IMU_Y_M:-0.0}" --z "${APEX_IMU_Z_M:-0.08}" \
+    --roll 0.0 --pitch 0.0 --yaw 0.0 \
+    --frame-id "${APEX_BASE_FRAME:-base_link}" --child-frame-id "${APEX_IMU_FRAME:-imu_link}" &
+  track_pid "imu static transform publisher" "$!"
+
+  # 1. the learned odometry, from the host tree that carries torch, onnxruntime
+  #    and numba (~/odom_rt mounted read-only at /odom_rt). This is the exact
+  #    invocation measured on this Pi on 2026-10-09: polar ICP, ONNX network,
+  #    one thread, pinned.
+  ODOM_DIR="${APEX_ODOM_DIR:-/odom_rt}"
+  if [[ ! -d "${ODOM_DIR}/simulation/learning/lidar_imu_pose" ]]; then
+    echo "[APEX] REFUSING to start the race stack: ${ODOM_DIR} is not mounted" >&2
+    exit 1
+  fi
+  (
+    cd "${ODOM_DIR}/simulation/learning/lidar_imu_pose" || exit 1
+    PYTHONPATH="${ODOM_DIR}/pylib:${ODOM_DIR}/pylib_b:${PYTHONPATH}" \
+    OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+    exec taskset -c "${APEX_ODOM_CPU:-1}" nice -n -5 python3 learned_odometry_node.py --ros-args \
+      -r __node:=apex_learned_odometry \
+      -p "checkpoint:=${APEX_ODOM_CHECKPOINT:-${ODOM_DIR}/simulation/learning/outputs/real2sim_v5_10hz/hybrid_submap_v4/best_model.pt}" \
+      -p "sensor_profile:=${APEX_ODOM_SENSOR_PROFILE:-APEX_real_wt61}" \
+      -p "sensors_yaml:=${ODOM_DIR}/simulation/tools/pose_dataset/config/sensors.yaml" \
+      -p "icp_backend:=polar" -p "net_backend:=onnx" -p "device:=cpu" -p "num_threads:=1" \
+      -p "use_sim_time:=false" -p "log_csv:=${RACE_RUN_DIR}/estimator.csv"
+  ) &
+  track_pid "learned odometry" "$!"
+  echo "[APEX] Waiting ${APEX_ODOM_WARMUP_S:-10}s for the odometry warm-up (numba JIT + ONNX session)"
+  sleep "${APEX_ODOM_WARMUP_S:-10}"
+
+  # 2. slam_toolbox on the de-skewed revolutions, with the learned odometry as
+  #    its motion prior. Its own launch file drives the lifecycle transitions.
+  taskset -c "${APEX_SLAM_CPU:-2}" ros2 launch slam_toolbox online_async_launch.py \
+    use_sim_time:=false \
+    slam_params_file:="${APEX_SLAM_PARAMS_FILE:-/work/ros2_ws/src/apex_race/config/slam_toolbox_race.yaml}" &
+  track_pid "slam_toolbox" "$!"
+  startup_stage_sleep "slam_toolbox"
+
+  # 3. the driver. PYTHONPATH, not an installed package: nothing is built on
+  #    the car (APEX_SKIP_BUILD=1), exactly as every apex_telemetry node runs.
+  #    Skipped for the bounded motion test, which needs the estimator and the
+  #    actuation bridge but must be the only thing publishing commands.
+  RACE_CMD=(python3 -m apex_race.nodes.race_driver_node
+    --ros-args
+    --params-file "${APEX_RACE_PARAMS_FILE:-/work/ros2_ws/src/apex_race/config/race_driver.yaml}"
+    -p "vehicle_yaml:=${APEX_RACE_VEHICLE_YAML:-/work/ros2_ws/src/apex_race/config/vehicle_real.yaml}"
+    -p "laps:=${APEX_RACE_LAPS:-1}"
+    -p "output_dir:=${RACE_RUN_DIR}/plan"
+    -p "log_csv:=${RACE_RUN_DIR}/driver.csv"
+    -p "events_json:=${RACE_RUN_DIR}/race_events.json"
+    -p "inputs_csv:=${RACE_RUN_DIR}/driver_inputs.csv")
+  if [[ -n "${APEX_RACE_CMD_TOPIC:-}" ]]; then
+    # Dry run: the driver drives the state machine for real but its commands go
+    # nowhere near the ESC.
+    RACE_CMD+=(-p "cmd_topic:=${APEX_RACE_CMD_TOPIC}")
+    echo "[APEX] DRY RUN: race driver commands go to ${APEX_RACE_CMD_TOPIC}, not to the bridge"
+  fi
+  if [[ -n "${APEX_RACE_REQUIRE_ARM:-}" ]]; then
+    RACE_CMD+=(-p "require_arm:=${APEX_RACE_REQUIRE_ARM}")
+  fi
+  if [[ "${APEX_ENABLE_RACE_DRIVER:-1}" == "1" ]]; then
+    PYTHONPATH="/work/ros2_ws/src/apex_race:${PYTHONPATH}" \
+      taskset -c "${APEX_RACE_DRIVER_CPU:-3}" "${RACE_CMD[@]}" &
+    track_pid "race driver" "$!"
+    startup_stage_sleep "race driver"
+  else
+    echo "[APEX] Race driver disabled: estimator and SLAM only (bounded motion test)"
+  fi
+
+  # 4. optional: the recorded sensors of a past run, replayed into this graph
+  #    so the whole state machine runs with the car switched off.
+  if [[ -n "${APEX_REPLAY_FIXTURE:-}" ]]; then
+    python3 /work/ros2_ws/scripts/replay_sensors.py "${APEX_REPLAY_FIXTURE}" &
+    track_pid "sensor replay" "$!"
+    echo "[APEX] Replaying ${APEX_REPLAY_FIXTURE} into the race stack"
+  fi
+fi
+
 PIPELINE_FEATURES=("Nano raw" "LiDAR")
+if [[ "${ENABLE_RACE_STACK}" == "1" ]]; then
+  PIPELINE_FEATURES+=("learned odometry" "slam_toolbox" "race driver")
+fi
 if [[ "${ENABLE_KINEMATICS}" == "1" ]]; then
   PIPELINE_FEATURES+=("raw odometry")
 fi

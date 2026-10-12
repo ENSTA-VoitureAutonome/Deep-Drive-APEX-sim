@@ -377,11 +377,23 @@ def main() -> None:
     ap.add_argument("--scan-hz", type=float, default=SCAN_HZ, help="LiDAR revolution rate (APEX_real: 10; today's car driver: 13.03)")
     ap.add_argument("--plant-scale", type=float, default=1.0,
                     help="how far the real plant of each run is drawn from vehicle.yaml (0: exactly the datasheet, 1: as the car may be, 3: three sigma)")
+    ap.add_argument("--vehicle-yaml", type=Path, default=None,
+                    help="the description the DRIVER is given (default: the dataset's vehicle.yaml). The plant it actually drives is still "
+                         "drawn by draw_plant_mismatch, so pointing this at the real car's file tests that car's limits, not its plant.")
+    ap.add_argument("--driver-params", type=Path, default=None,
+                    help="ROS params file of the race driver (apex_race/config/race_driver.yaml): its nested sections are applied like --set")
     a = ap.parse_args()
     SCAN_HZ = a.scan_hz
     from pose_dataset.vehicle import load_vehicle_config  # noqa: PLC0415
 
-    cfg = RaceDriverConfig(vehicle=vehicle_limits(load_vehicle_config()))
+    cfg = RaceDriverConfig(vehicle=vehicle_limits(load_vehicle_config(a.vehicle_yaml)))
+    if a.driver_params is not None:
+        import yaml  # noqa: PLC0415
+
+        params = yaml.safe_load(a.driver_params.read_text())
+        node = next(iter(params.values())) if "ros__parameters" not in params else params
+        a.set = [f"{sec}.{key}={value}" for sec, values in node["ros__parameters"].items()
+                 if isinstance(values, dict) for key, value in values.items()] + list(a.set)
     cfg.planner.mode = a.race_line
     for item in a.set:
         key, value = item.split("=", 1)

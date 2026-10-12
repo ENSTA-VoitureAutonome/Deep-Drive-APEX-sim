@@ -1,0 +1,19 @@
+[Unit]
+Description=APEX: keep the car's Wi-Fi link up and log every drop
+After=network.target NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=__APEX_ROOT__
+Environment=APEX_NET_LOG=__APEX_ROOT__/data/net_watchdog.csv
+ExecStart=/bin/bash -lc '__APEX_ROOT__/tools/core/apex_net_watchdog.sh'
+Restart=always
+RestartSec=5
+# It must not be the reason the car runs out of CPU or disk.
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=multi-user.target

@@ -147,7 +147,14 @@ apex_rplidar_publisher:
     target_rate_hz: 10.0
     motor_pwm: 520                          # start value, regulated towards target_rate_hz
     regulate_motor: true
+    motor_start_pwm: 0                      # soft start: PWM climbs from here to motor_pwm ...
+    motor_ramp_s: 6.0                       # ... over this time (limits the motor's start-up current)
     motor_settle_s: 2.0
+    power_guard: true                       # wait for no Pi under-voltage before the start, hold the ramp while it is up
+    power_clear_s: 1.0
+    power_wait_max_s: 20.0
+    power_hold_max_s: 10.0
+    retry_max_s: 30.0                       # reopen backoff after a failure: 1, 2, 4 ... 30 s
     stamp_correction_ms: 0.0                # minimum USB latency, to calibrate on the car
     drop_incomplete_revolutions: true
     timing_log_every_s: 10.0
@@ -537,6 +544,28 @@ cmd_vel_to_apex_actuation_node:
     sim_steering_pwm_topic: "/apex/sim/pwm/steering_dc"
     control_rate_hz: 60.0
     command_timeout_s: 0.35
+    # Which plant the bridge presents to whoever is driving.
+    #   legacy  what the recognition-tour stack was tuned with: a step to
+    #           min_effective_speed_pct, an exponential ramp, a launch boost and
+    #           direct gamepad steering. Unchanged, and still the default.
+    #   affine  what the race stack needs: one affine m/s -> ESC percent map per
+    #           direction, no ramp, no boost, no deadband compensation, because
+    #           apex_race.core.plant_id identifies the deadband, the gain and the
+    #           lag from the car's own odometry while it drives. A bridge that
+    #           also compensated them would be what gets identified.
+    # start_apex_pipeline.sh selects `affine` whenever the race stack is on.
+    actuation_profile: "legacy"
+    # The affine map (ignored under `legacy`). The gauge offset sits *below* the
+    # believed ESC threshold of 17 % on purpose: the leftover (17-15)/33 =
+    # 0.061 m/s is a residual deadband the identifier brackets from the
+    # launches, and an error on that side leaves the car still, never lurching.
+    # The ceiling is max_speed_pct, which the race launcher raises to 45 % (the
+    # legacy stack keeps the 25 % below).
+    esc_zero_pct: 15.0
+    speed_pct_per_mps: 33.0
+    esc_zero_rev_pct: 18.0
+    reverse_pct_per_mps: 33.0
+    decode_v_min_mps: 0.02      # below this the servo holds its angle instead of centring
     manual_status_stale_s: 0.50
     use_direct_manual_steering: true
     wheelbase_m: 0.30

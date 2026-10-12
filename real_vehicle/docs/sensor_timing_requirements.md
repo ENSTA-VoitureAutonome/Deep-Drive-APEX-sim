@@ -75,6 +75,8 @@ All paths below are under `real_vehicle/`.
   | `source_backend` | `rplidar_express` | Driver backend. |
   | `target_rate_hz` | 10.0 | Rotation rate the motor is regulated to. |
   | `motor_pwm` | 520 | Start value of the motor PWM. |
+  | `motor_start_pwm`, `motor_ramp_s` | 200, 3.0 | Soft start: the PWM climbs from 200 to `motor_pwm` over 3 s instead of stepping, to limit the motor's start-up current on the Pi's USB port. |
+  | `retry_max_s` | 30 | After a failure the motor is stopped and the LiDAR reopened after 1, 2, 4 … 30 s. |
   | `regulate_motor` | true | Regulate the PWM towards `target_rate_hz`. |
   | `stamp_correction_ms` | 0 | Minimum USB latency subtracted from the stamps. |
   | `use_device_timestamps` | true | IMU: stamp each sample at its MCU time. |
@@ -92,6 +94,28 @@ All paths below are under `real_vehicle/`.
   - the driver against a fake port.
 
 ## Bring-up on the car
+
+### LiDAR alone (first)
+
+`tools/lidar/apex_lidar_only.sh` runs only the LiDAR node in the APEX image, in a detached container (`apex_lidar`): no IMU node, no actuators, and the SSH session stays free. It refuses to start while `apex_pipeline` or `apex-real-ready.service` holds the port, or while the Pi reports under-voltage. The motor starts after `APEX_LIDAR_START_DELAY_S` (5 s) with the soft start.
+
+```bash
+sudo systemctl stop apex-real-ready.service    # if installed; it restarts the full stack
+./tools/core/apex_core_down.sh
+./tools/lidar/apex_lidar_only.sh power         # throttled flags before the motor starts
+./tools/lidar/apex_lidar_only.sh up
+./tools/lidar/apex_lidar_only.sh logs          # firmware, soft start, "LiDAR timing: 10.0x Hz"
+./tools/lidar/apex_lidar_only.sh check --duration 60     # car at rest in a room: PASS/FAIL per requirement
+./tools/lidar/apex_lidar_only.sh check watch --expect 0  # object ahead; then --expect 90 with it on the left
+./tools/lidar/apex_lidar_only.sh record lidar_static_01 60
+./tools/lidar/apex_lidar_only.sh down
+```
+
+`check` (`ros2_ws/scripts/lidar_bringup_check.py`) grades `/lidar/scan_raw`: layout, 10 Hz ± 1 %, regular and complete revolutions, lost revolutions ≤ 2 %, `scan_time` equal to the revolution period, stamp at the first sample (received 0–50 ms after the end of its revolution), valid bins, and the always-empty sector behind the car. It also reports the missing-return rate outside the blind sector against the 12 % of `APEX_real`. `watch --expect DEG` prints the `heading_offset_deg` (an integer) that puts the object at DEG.
+
+If the Pi resets or drops its network when the motor starts, the motor's start-up current is sagging the Pi's 5 V supply. The soft start limits it. If it still happens, `power` shows `under-voltage since boot 1`; power the LiDAR adapter from its auxiliary micro-USB port on a separate 5 V supply, and use a USB 2.0 (black) port. `tools/core/enable_pi_persistent_journal.sh` and `tools/core/collect_pi_reset_diagnostics.sh` keep and collect the evidence across a reset.
+
+### Full checklist
 
 1. **Flash the IMU firmware.**
    ```bash
@@ -117,7 +141,7 @@ All paths below are under `real_vehicle/`.
 6. **Replay the recording offline** through the learned odometry before closing the loop.
 
 **Rollback.**
-- LiDAR: `APEX_LIDAR_BACKEND=rplidar` (the previous driver).
+- LiDAR: `APEX_LIDAR_BACKEND=rplidar` (the previous driver); `docker-compose.yml` passes it to the container.
 - IMU: the old firmware still works with the new node, stamped on reception with a warning; the new firmware works with the old node.
 - The unused legacy package `voiture_system` is not modified.
 

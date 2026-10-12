@@ -1,0 +1,80 @@
+{
+ "passed": true,
+ "checks": {
+  "layout": {
+   "pass": true,
+   "measured": {
+    "beams": 360,
+    "angle_min": -3.14159,
+    "angle_increment": 0.01745,
+    "range_min": 0.15,
+    "frame_id": "laser"
+   },
+   "required": "360 bins, angle_min -pi, 1 deg, range_min 0.15 m"
+  },
+  "stamps_increasing": {
+   "pass": true,
+   "measured": 0,
+   "required": "every stamp after the previous one"
+  },
+  "rate_10hz": {
+   "pass": true,
+   "measured": 9.974,
+   "required": "10 Hz +-1 %"
+  },
+  "regular_revolutions": {
+   "pass": true,
+   "measured": [
+    100.0,
+    100.5
+   ],
+   "required": "p5..p95 within 90..110 ms"
+  },
+  "no_partial_revolutions": {
+   "pass": true,
+   "measured": 0.34,
+   "required": "< 1 % of intervals shorter than 0.8 revolution"
+  },
+  "dropped_revolutions": {
+   "pass": true,
+   "measured": 0.83,
+   "required": "<= 2 % of revolutions lost"
+  },
+  "scan_time_is_the_period": {
+   "pass": true,
+   "measured": 0.0,
+   "required": "median |scan_time - stamp interval| < 1 ms"
+  },
+  "stamp_at_first_sample": {
+   "pass": true,
+   "measured": [
+    21.7,
+    33.1,
+    45.0
+   ],
+   "required": "received 0..50 ms after the end of its revolution (p5, p50, p95 in ms)"
+  },
+  "valid_bins": {
+   "pass": true,
+   "measured": 247.0,
+   "required": ">= 210 of 300 fillable 1-degree bins"
+  },
+  "blind_sector_behind": {
+   "pass": true,
+   "measured": {
+    "from_deg": 142.0,
+    "to_deg": -155.0,
+    "centre_deg": 174.0
+   },
+   "required": "the longest always-empty sector is behind the car (centre 180 +-15 deg; profile +145..-155)"
+  }
+ },
+ "info": {
+  "missing_returns_outside_blind_pct": 17.4,
+  "missing_returns_assumed_by_APEX_real_pct": 12.0,
+  "returns_inside_blind_sector_pct": 0.0,
+  "bins_always_below_0.15m_deg": [],
+  "revolutions": 596,
+  "mean_rate_hz": 9.969
+ }
+}

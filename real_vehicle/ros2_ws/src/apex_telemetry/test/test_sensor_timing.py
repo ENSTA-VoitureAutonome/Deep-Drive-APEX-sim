@@ -18,10 +18,13 @@ from apex_telemetry.perception.rplidar_express import (
     ExpressScanPipeline,
     MotorRegulator,
     RPLidarExpressDriver,
+    SupplyGuard,
     bin_revolution,
     command_packet,
     decode_capsule_pair,
+    find_undervoltage_alarm,
     laser_angle_deg,
+    motor_ramp,
 )
 from apex_telemetry.timing import CounterUnwrapper, DeviceClockMapper
 
@@ -376,3 +379,110 @@ def test_driver_requests_with_a_fake_port():
     assert port["p"].written[-1] == command_packet(CMD_EXPRESS_SCAN, bytes(5))
     driver.close()
     assert port["p"].dtr is True
+
+
+def test_motor_pwm_query_without_answer_is_unknown_not_unsupported():
+    class SilentAccBoard(FakePort):
+        def write(self, data):
+            if data[1] != 0xFF:
+                super().write(data)
+
+    driver = RPLidarExpressDriver("/dev/null", serial_factory=SilentAccBoard, timeout_s=0.1)
+    driver.open()
+    assert driver.supports_motor_pwm() is None
+    driver.close()
+
+
+def test_motor_ramp_climbs_linearly_to_the_target():
+    ramp = motor_ramp(200, 520, ramp_s=3.0, step_s=0.1)
+    assert len(ramp) == 30 and ramp[-1] == 520
+    assert all(b > a for a, b in zip([200] + ramp, ramp))
+    assert max(np.diff([200] + ramp)) <= 11
+    assert motor_ramp(200, 520, ramp_s=0.0) == [520]
+    assert motor_ramp(600, 520, ramp_s=3.0) == [520]  # never starts above the target
+
+
+class FakeClockSupply:
+    """An under-voltage flag file driven by a fake clock: up at the given times."""
+
+    def __init__(self, tmp_path, low_at):
+        self.t = 0.0
+        self.low_at = low_at
+        self.path = tmp_path / "in0_lcrit_alarm"
+        self.update()
+
+    def update(self):
+        self.path.write_text("1\n" if any(a <= self.t < b for a, b in self.low_at) else "0\n")
+
+    def sleep(self, s):
+        self.t += s
+        self.update()
+
+    def guard(self, **kwargs):
+        return SupplyGuard(str(self.path), sleep=self.sleep, clock=lambda: self.t, **kwargs)
+
+
+def test_supply_guard_waits_for_a_clear_rail_before_the_motor_start(tmp_path):
+    supply = FakeClockSupply(tmp_path, low_at=[(0.0, 2.0), (2.5, 3.0)])
+    assert supply.guard(clear_s=1.0, wait_max_s=20.0).wait_clear()
+    assert supply.t == pytest.approx(4.0, abs=0.06)  # clear from 3.0 s, for 1 s
+
+
+def test_supply_guard_gives_up_on_a_supply_that_never_clears(tmp_path):
+    supply = FakeClockSupply(tmp_path, low_at=[(0.0, 1e9)])
+    assert not supply.guard(clear_s=1.0, wait_max_s=5.0).wait_clear()
+    assert supply.t == pytest.approx(5.0, abs=0.06)
+
+
+def test_supply_guard_holds_the_ramp_while_under_voltage(tmp_path):
+    supply = FakeClockSupply(tmp_path, low_at=[(0.1, 0.6)])
+    guard = supply.guard(hold_max_s=10.0)
+    guard.ramp_wait(0.1)
+    assert supply.t == pytest.approx(0.6, abs=0.06)
+    guard.ramp_wait(0.1)
+    assert supply.t == pytest.approx(0.7, abs=0.06)
+    always = FakeClockSupply(tmp_path, low_at=[(0.0, 1e9)]).guard(hold_max_s=2.0)
+    always.ramp_wait(0.1)  # bounded: a step never waits more than step + hold_max_s
+    assert always._clock() == pytest.approx(2.1, abs=0.06)
+
+
+def test_supply_guard_without_a_flag_is_a_plain_wait(tmp_path):
+    slept = []
+    guard = SupplyGuard(None, sleep=slept.append)
+    assert guard.undervoltage() is None and guard.wait_clear()
+    guard.ramp_wait(0.1)
+    assert slept == [0.1]
+    assert SupplyGuard(str(tmp_path / "missing")).undervoltage() is None
+
+
+def test_find_undervoltage_alarm_picks_the_rpi_volt_hwmon(tmp_path):
+    (tmp_path / "hwmon0").mkdir()
+    (tmp_path / "hwmon0" / "name").write_text("cpu_thermal\n")
+    (tmp_path / "hwmon2").mkdir()
+    (tmp_path / "hwmon2" / "name").write_text("rpi_volt\n")
+    (tmp_path / "hwmon2" / "in0_lcrit_alarm").write_text("0\n")
+    assert find_undervoltage_alarm(str(tmp_path / "hwmon*")) == str(tmp_path / "hwmon2" / "in0_lcrit_alarm")
+    assert find_undervoltage_alarm(str(tmp_path / "none*")) is None
+
+
+def test_driver_soft_start_sets_the_low_pwm_before_enabling_the_motor():
+    port = {}
+
+    def factory(*args, **kwargs):
+        port["p"] = FakePort()
+        return port["p"]
+
+    waits = []
+    driver = RPLidarExpressDriver("/dev/null", serial_factory=factory, timeout_s=0.2)
+    driver.open()
+    driver.start_motor(520, start_pwm=200, ramp_s=1.0, step_s=0.1, wait=waits.append)
+    pwms = [
+        int.from_bytes(w[3:5], "little")
+        for w in port["p"].written
+        if w[:2] == command_packet(CMD_SET_MOTOR_PWM, bytes(2))[:2]
+    ]
+    assert pwms[0] == 200 and pwms[-1] == 520
+    assert all(b >= a for a, b in zip(pwms, pwms[1:]))
+    assert waits == [0.1] * 10
+    assert port["p"].dtr is False
+    driver.close()
