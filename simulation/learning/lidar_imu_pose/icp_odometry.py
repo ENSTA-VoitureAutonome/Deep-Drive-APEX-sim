@@ -89,7 +89,7 @@ PLICP or KISS-ICP) on the same data.
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import math
 import time
 
@@ -139,6 +139,9 @@ class IcpConfig:
     submap_agree_rad: float = 0.0087  # ... and 0.5 deg; otherwise scan-to-scan and a fresh local map
     submap_agree_rel: float = 0.0  # translation agreement also accepted within this fraction of the step (0: fixed 5 cm)
     max_lanes: int = 128  # runs processed together on the GPU (memory)
+    # Nearest-neighbour search: "cdist" (all target points, torch, batched on the GPU) or "polar" (bearing-binned exact
+    # search within the gate, compiled, one lane at a time: polar_icp.py). The same estimates; "polar" is ~the car's cost.
+    association: str = "cdist"
 
 
 ICP_VARIANTS = {
@@ -160,6 +163,13 @@ ICP_VARIANTS = {
     "submap_v4": IcpConfig(version=4, submap_keyframes=5, deskew_profile=True, submap_agree_rel=0.3, bias_sigma0_rps=0.08,
                            normal_window=2, normal_min_points=4),
 }
+# Every variant with the polar search (polar_icp.py): the same algorithm and parameters, compiled for the car (README section 11).
+ICP_VARIANTS.update({f"{name}_polar": replace(cfg, association="polar") for name, cfg in list(ICP_VARIANTS.items())})
+
+
+def with_association(cfg: IcpConfig, association: str) -> IcpConfig:
+    """``cfg`` with another nearest-neighbour search (the estimates do not change)."""
+    return replace(cfg, association=association)
 
 
 @contextmanager
@@ -273,6 +283,9 @@ def _compose(pose: Tensor, x: Tensor) -> Tensor:
 @torch.no_grad()
 def run_icp(sd: StreamData, cfg: IcpConfig = IcpConfig(), log=print) -> dict[str, Tensor]:
     """Runs are processed in groups of similar length (at most ``max_lanes``)."""
+    if cfg.association == "polar":
+        from polar_icp import run_icp_polar
+        return run_icp_polar(sd, cfg, log=log)
     n_total = sd.target.shape[0]
     logs = {name: torch.full((n_total,) + shape, float("nan"), device=sd.device) for name, shape in (
         ("pred", (3,)), ("sigma", (3,)), ("weak_sigma_m", ()), ("eig_ratio", ()), ("icp_yaw_sigma_rad", ()),

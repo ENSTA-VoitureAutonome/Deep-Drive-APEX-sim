@@ -59,7 +59,7 @@ from icp_odometry import ICP_VARIANTS, IcpConfig, run_icp
 from sqlite_streams import StreamData, load_split
 from robustness import RobustConfig, load_split_variants, variants_tag
 from sqlite_windows import WindowSampler
-from streaming_model import StreamingPoseNet, StreamScales
+from streaming_model import PAIR_WIDTHS, StreamingPoseNet, StreamScales
 from train_pose_fusion import compose_planar
 
 OUT = ROOT / "outputs" / "streaming_v2"
@@ -112,6 +112,7 @@ def subset_runs(data: dict[str, Any], step: int = 1, sensors: tuple[str, ...] = 
 @dataclass(frozen=True)
 class TrainConfig:
     hidden: int = 128
+    pair_widths: tuple[int, ...] = PAIR_WIDTHS  # channels of the scan-pair convolutions
     lanes: int = 64
     chunk: int = 32
     epochs: int = 40
@@ -130,6 +131,8 @@ class TrainConfig:
     robust: str = ""  # robustness.py config: perturbed copies of the runs (empty: the stored streams only, the historical models)
     variants: int = 0  # perturbed copies of every training run (validation: the plain runs + one perturbed copy)
     bias_max: tuple[float, float, float] = StreamScales.bias_max  # gyro z [rad/s], accel x, y [m/s^2] bounds of the bias states
+    init: str = ""  # fine-tune: start from these weights instead of a fresh initialisation
+    freeze: tuple[str, ...] = ()  # fine-tune: parameter name prefixes to hold fixed (e.g. "cells" "inp" "pair_encoder")
 
 
 def split_variants(split: str, variants: int) -> list[int]:
@@ -205,6 +208,10 @@ def _wrap(a: Tensor) -> Tensor:
     return torch.atan2(torch.sin(a), torch.cos(a))
 
 
+STILL_TRANSLATION_M = 0.002  # an interval whose true translation is under this counts as standstill
+STILL_UNIT_M = 0.001  # ... and its error is scored in millimetres, not centimetres
+
+
 def streaming_loss(out: dict[str, Tensor], batch: dict[str, Tensor]) -> tuple[Tensor, dict[str, float]]:
     delta, target = out["delta"], batch["target"]
     units = delta.new_tensor(UNITS)
@@ -224,8 +231,21 @@ def streaming_loss(out: dict[str, Tensor], batch: dict[str, Tensor]) -> tuple[Te
     vel = nn.functional.smooth_l1_loss((out["velocity"] - batch["v_body"]) / 0.05, torch.zeros_like(out["velocity"]))
     bias_units = delta.new_tensor([1.0e-3, 0.02, 0.02])
     bias = nn.functional.smooth_l1_loss((out["bias"] - batch["bias_truth"]) / bias_units, torch.zeros_like(out["bias"]))
-    total = nll + 0.1 * l1 + 0.05 * comp + 0.1 * vel + 0.2 * bias
-    parts = {"loss": total, "nll": nll, "comp": comp, "vel": vel, "bias": bias, "trans_mae_cm": 100 * torch.linalg.vector_norm(err[..., :2], dim=-1).mean()}
+    # Standing still, in millimetres. Everything above is scored in the units of
+    # a moving car (centimetres), where a systematic 0.7 mm per revolution is
+    # 0.07 of a unit -- invisible -- and that same error is 0.4 m/min of drift,
+    # because at a standstill nothing washes it out: there is no next correction
+    # with real motion in it, so it integrates for as long as the car is parked.
+    # Scored only where the car truly did not move, so it cannot trade against
+    # the accuracy of a driving interval.
+    still = torch.linalg.vector_norm(target[..., :2], dim=-1) < STILL_TRANSLATION_M
+    sl = delta.new_zeros(())
+    if bool(still.any()):
+        r_still = err[..., :2][still] / STILL_UNIT_M
+        sl = nn.functional.smooth_l1_loss(r_still, torch.zeros_like(r_still))
+    total = nll + 0.1 * l1 + 0.05 * comp + 0.1 * vel + 0.2 * bias + 0.2 * sl
+    parts = {"loss": total, "nll": nll, "comp": comp, "vel": vel, "bias": bias, "still": sl,
+             "still_frac": still.float().mean(), "trans_mae_cm": 100 * torch.linalg.vector_norm(err[..., :2], dim=-1).mean()}
     return total, {k: float(v.detach()) for k, v in parts.items()}
 
 
@@ -272,15 +292,59 @@ def train(cfg: TrainConfig, db: Path, out: Path, log, icp_dir: Path = OUT) -> No
     if cfg.sensors:
         log(f"[train] sensor profiles {list(cfg.sensors)}: {len(data['train']['runs'])} train / {len(data['validation']['runs'])} validation runs")
     truth_val = om.split_truth(data["validation"])
-    model = StreamingPoseNet(cfg.hidden, scales=StreamScales(bias_max=tuple(cfg.bias_max)), hybrid=cfg.hybrid, sweep_profile=cfg.sweep_profile).to(dev)
+    model = StreamingPoseNet(cfg.hidden, scales=StreamScales(bias_max=tuple(cfg.bias_max)), hybrid=cfg.hybrid, sweep_profile=cfg.sweep_profile,
+                             pair_widths=tuple(cfg.pair_widths)).to(dev)
     params = sum(p.numel() for p in model.parameters())
+    # Fine-tuning: the same architecture started from trained weights, with
+    # part of it held fixed. Freezing the encoders and the recurrent core keeps
+    # the dynamics that were validated and leaves only the heads to re-learn,
+    # which is what a regime the training set was missing actually needs.
+    if cfg.init:
+        ck_init = torch.load(cfg.init, map_location=dev, weights_only=False)
+        model.load_state_dict(ck_init["model"])
+        log(f"[train] initialised from {cfg.init} (epoch {ck_init.get('epoch')}, validation {ck_init.get('val', {}).get('t_rel_pct')})")
+    if cfg.freeze:
+        for name, p in model.named_parameters():
+            if any(name == f or name.startswith(f + ".") for f in cfg.freeze):
+                p.requires_grad_(False)
+        frozen = sum(p.numel() for p in model.parameters() if not p.requires_grad)
+        trainable = sorted({n.split(".")[0] for n, p in model.named_parameters() if p.requires_grad})
+        log(f"[train] frozen {frozen} of {params} parameters; training {trainable}")
+        if frozen == 0:
+            raise SystemExit(f"--freeze {list(cfg.freeze)} matched no parameter; names are {sorted({n.split('.')[0] for n, _ in model.named_parameters()})}")
     steps_per_epoch = math.ceil(sds["train"].intervals / (cfg.lanes * cfg.chunk))
-    opt = torch.optim.AdamW(model.parameters(), lr=cfg.learning_rate, weight_decay=cfg.weight_decay)
+    opt = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=cfg.learning_rate, weight_decay=cfg.weight_decay)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=cfg.learning_rate, total_steps=cfg.epochs * steps_per_epoch, pct_start=0.1)
     lanes = Lanes(sds["train"], cfg, np.random.default_rng(cfg.seed))
     state = model.initial_state(cfg.lanes, dev)
     log(f"[train] {params} parameters, {steps_per_epoch} steps/epoch of {cfg.lanes} lanes x {cfg.chunk} intervals, {cfg.epochs} epochs")
+    # Invented motion while parked, in millimetres per revolution: the mean
+    # translation the network reports over validation intervals whose true body
+    # speed is under 1 cm/s. The validation split's short stops and the 1.5 s
+    # static start of every run are held-out standstills; the minutes-long case
+    # is measured separately with tools/analysis/standstill_drift.py.
+    still_mask = (torch.linalg.vector_norm(sds["validation"].v_body, dim=1) < 0.01).cpu().numpy()
+
+    def scores(pred: dict[str, Tensor]) -> dict[str, float]:
+        m = om.evaluate(pred["pred"].numpy(), truth_val, sigma=pred["sigma"].numpy(), groups=())["all"]
+        xy = pred["pred"].numpy()[still_mask, :2]
+        ok = np.isfinite(xy).all(axis=1)
+        m["still_mm"] = float(1e3 * np.linalg.norm(xy[ok], axis=1).mean()) if ok.any() else float("nan")
+        m["still_n"] = int(ok.sum())
+        return m
+
     history, best = [], (math.inf, 0)
+    # Fine-tuning is two objectives: fix the standstill without letting the
+    # driving metric go. Score the starting weights first, then keep the epoch
+    # with the least invented motion among those whose segment drift stays
+    # within `drift_tol` of where it started. Plain training keeps its own rule
+    # (the lowest drift), unchanged.
+    baseline: dict[str, float] = {}
+    drift_tol = 1.05
+    if cfg.init:
+        baseline = scores(stream_predict(model, sds["validation"]))
+        log(f"[train] epoch 0 (the initial weights) | t_rel {baseline['t_rel_pct']:.3f} % rpe1s {baseline['rpe_1s_cm']:.2f} cm "
+            f"still {baseline['still_mm']:.3f} mm over {baseline['still_n']} parked intervals")
     t_start = time.time()
     for epoch in range(1, cfg.epochs + 1):
         model.train()
@@ -301,19 +365,25 @@ def train(cfg: TrainConfig, db: Path, out: Path, log, icp_dir: Path = OUT) -> No
                 sums[k] = sums.get(k, 0.0) + v / steps_per_epoch
         rec = {"epoch": epoch, "seconds": time.time() - t0, **{f"train_{k}": v for k, v in sums.items()}}
         if epoch % cfg.eval_every == 0 or epoch == cfg.epochs:
-            val = stream_predict(model, sds["validation"])
-            m = om.evaluate(val["pred"].numpy(), truth_val, sigma=val["sigma"].numpy(), groups=())["all"]
+            m = scores(stream_predict(model, sds["validation"]))
             rec.update({f"val_{k}": v for k, v in m.items()})
-            if m["t_rel_pct"] < best[0]:
-                best = (m["t_rel_pct"], epoch)
+            if baseline:
+                keep = m["still_mm"] < best[0] and m["t_rel_pct"] <= drift_tol * baseline["t_rel_pct"]
+            else:
+                keep = m["t_rel_pct"] < best[0]
+            if keep:
+                best = (m["still_mm"] if baseline else m["t_rel_pct"], epoch)
                 torch.save({"model": model.state_dict(), "config": asdict(cfg), "epoch": epoch, "val": m, "db": _db_tag(db)}, out / "best_model.pt")
-            log(f"[train] epoch {epoch}/{cfg.epochs} {rec['seconds']:.0f}s loss {sums['loss']:.3f} (nll {sums['nll']:.2f} comp {sums['comp']:.2f} vel {sums['vel']:.2f} bias {sums['bias']:.2f}) trans {sums['trans_mae_cm']:.2f} cm | val speed {m['speed_err_cmps']:.2f} cm/s "
-                f"rel {m['rel_err_pct']:.2f} % yawrate {m['yawrate_err_dps']:.3f} deg/s rpe1s {m['rpe_1s_cm']:.2f} cm t_rel {m['t_rel_pct']:.2f} % r_rel {m['r_rel_degpm']:.3f} deg/m")
+            log(f"[train] epoch {epoch}/{cfg.epochs} {rec['seconds']:.0f}s loss {sums['loss']:.3f} (nll {sums['nll']:.2f} comp {sums['comp']:.2f} vel {sums['vel']:.2f} bias {sums['bias']:.2f} still {sums['still']:.2f} over {100 * sums['still_frac']:.0f} %) trans {sums['trans_mae_cm']:.2f} cm | val speed {m['speed_err_cmps']:.2f} cm/s "
+                f"rel {m['rel_err_pct']:.2f} % yawrate {m['yawrate_err_dps']:.3f} deg/s rpe1s {m['rpe_1s_cm']:.2f} cm t_rel {m['t_rel_pct']:.2f} % r_rel {m['r_rel_degpm']:.3f} deg/m "
+                f"still {m['still_mm']:.3f} mm{'' if not keep else '  <- kept'}")
         else:
-            log(f"[train] epoch {epoch}/{cfg.epochs} {rec['seconds']:.0f}s loss {sums['loss']:.3f} trans {sums['trans_mae_cm']:.2f} cm")
+            log(f"[train] epoch {epoch}/{cfg.epochs} {rec['seconds']:.0f}s loss {sums['loss']:.3f} still {sums['still']:.2f} trans {sums['trans_mae_cm']:.2f} cm")
         history.append(rec)
         (out / "history.json").write_text(json.dumps({"config": asdict(cfg), "parameters": params, "best_epoch": best[1], "history": history}, indent=1), encoding="utf-8")
-    log(f"[train] done in {time.time() - t_start:.0f} s, best epoch {best[1]} (validation segment drift {best[0]:.3f} %)")
+    kind = "invented motion while parked" if baseline else "validation segment drift"
+    unit = "mm" if baseline else "%"
+    log(f"[train] done in {time.time() - t_start:.0f} s, best epoch {best[1]} ({kind} {best[0]:.3f} {unit})")
     plot_history(history, best[1], out / "training_curves.png")
 
 
@@ -383,7 +453,8 @@ def load_or_run_icp(split: str, sd: StreamData | None, out: Path, log, variant: 
 def _load_net(path: Path, dev: torch.device, regularize: bool) -> tuple[StreamingPoseNet, dict[str, Any]]:
     ck = torch.load(path, map_location=dev, weights_only=False)
     model = StreamingPoseNet(ck["config"]["hidden"], regularize=regularize, hybrid=ck["config"].get("hybrid", False),
-                             sweep_profile=ck["config"].get("sweep_profile", False)).to(dev)
+                             sweep_profile=ck["config"].get("sweep_profile", False),
+                             pair_widths=tuple(ck["config"].get("pair_widths", PAIR_WIDTHS))).to(dev)
     model.load_state_dict(ck["model"])
     return model, ck
 
@@ -620,6 +691,11 @@ def main() -> None:
     ap.add_argument("--robust", default="", help="robustness.py config (e.g. config/robust_real.yaml): perturbed copies of the runs (icp and train stages)")
     ap.add_argument("--variants", type=int, default=0, help="with --robust: perturbed copies of every training run (validation / test: one)")
     ap.add_argument("--bias-max", type=float, nargs=3, default=list(StreamScales.bias_max), help="bounds of the bias states: gyro z [rad/s], accel x y [m/s^2]")
+    ap.add_argument("--lr", type=float, default=TrainConfig.learning_rate, help="train: peak learning rate of the one-cycle schedule")
+    ap.add_argument("--init", default="", help="train: fine-tune from these weights (same architecture) instead of a fresh initialisation")
+    ap.add_argument("--freeze", nargs="*", default=[], help="train: parameter prefixes to hold fixed, e.g. --freeze pair_encoder imu_encoder inp cells")
+    ap.add_argument("--hidden", type=int, default=TrainConfig.hidden, help="train: width of the recurrent core and the heads")
+    ap.add_argument("--pair-widths", type=int, nargs=4, default=list(PAIR_WIDTHS), help="train: channels of the four scan-pair convolutions (multiples of 8)")
     args = ap.parse_args()
     torch.backends.cudnn.benchmark = True
     torch.backends.cuda.matmul.allow_tf32 = True
@@ -641,8 +717,9 @@ def main() -> None:
             load_or_run_icp(split, StreamData(data, torch.device("cuda")), args.out, log, args.icp, args.db, args.imu_delay_comp, tag)
             del data
     elif args.stage == "train":
-        train(TrainConfig(epochs=args.epochs, hybrid=args.hybrid, icp_variant=args.icp, sensors=tuple(args.sensors), imu_delay_comp=args.imu_delay_comp,
-                          sweep_profile=args.sweep_profile, robust=args.robust, variants=args.variants, bias_max=tuple(args.bias_max)),
+        train(TrainConfig(epochs=args.epochs, hidden=args.hidden, pair_widths=tuple(args.pair_widths), hybrid=args.hybrid, icp_variant=args.icp, sensors=tuple(args.sensors), imu_delay_comp=args.imu_delay_comp,
+                          sweep_profile=args.sweep_profile, robust=args.robust, variants=args.variants, bias_max=tuple(args.bias_max),
+                          learning_rate=args.lr, init=args.init, freeze=tuple(args.freeze)),
               args.db, stage_out, log, icp_dir=args.out)
     else:
         report(args.db, args.out, log, tuple(args.sensors), args.imu_delay_comp)

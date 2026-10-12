@@ -129,6 +129,26 @@ presets:
       - {split: test, tracks: [test_unseen], motions: *all_motions, sensors: [APEX_real], seeds: [1, 2, 3, 4, 5]}
       - {split: test, tracks: [test_unseen], motions: [slow, slow_variable, slow_stop_and_go], sensors: [APEX_real], seeds: [1, 2, 3], laps: 1.0}
 
+  park_v5:
+    role: main
+    sensor_backend: gazebo_native
+    description: >-
+      The standstill supplement to dataset v4: the same tracks, sensors and
+      realism, driven with the `parked_long` motion profile so every run holds
+      tens of seconds of true standstill. Generate it with --resume into a copy
+      of pose_dataset_v4.sqlite3 (it only adds these runs). Train split only:
+      the validation and test metrics are relative to the path driven, which a
+      parked run does not have, and the held-out standstill check is
+      tools/analysis/standstill_drift.py.
+    laps: 1.0
+    groups:
+      - {split: train, tracks: *train_tracks, motions: [parked_long], sensors: [APEX_real], seeds: [1, 2, 3]}
+      # The same trajectories under the profile that adds the WT61PC's zero-rate
+      # recalibration at rest, so the training stream holds both of the static
+      # signatures the car can present: a gyro with its turn-on bias and its
+      # noise, and one reporting exactly 0.000 rad/s.
+      - {split: train, tracks: *train_tracks, motions: [parked_long], sensors: [APEX_real_az], seeds: [1, 2, 3]}
+
   zeroshot:
     role: zeroshot
     description: >-

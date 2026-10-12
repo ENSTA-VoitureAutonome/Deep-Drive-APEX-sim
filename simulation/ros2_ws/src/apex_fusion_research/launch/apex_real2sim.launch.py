@@ -197,7 +197,7 @@ def _setup(context, *_args, **_kwargs):  # noqa: ANN001, ANN202
              parameters=[{**{k: float(v) for k, v in plant.items() if k not in ("lidar_extra_x", "rear_axle_offset_x")}, **common}]),
         ExecuteProcess(
             cmd=[str(venv_python), str(sim / "learning" / "lidar_imu_pose" / "learned_odometry_node.py"), "--ros-args",
-                 "-p", f"checkpoint:={ckpt}", "-p", f"sensor_profile:={sensor}", "-p", f"device:={arg('device')}", "-p", f"icp_backend:={arg('icp_backend')}", "-p", f"net_backend:={arg('net_backend')}",
+                 "-p", f"checkpoint:={ckpt}", "-p", f"sensor_profile:={sensor}", "-p", f"device:={arg('device')}", "-p", f"icp_backend:={arg('icp_backend')}", "-p", f"net_backend:={arg('net_backend')}", "-p", f"standstill_hold:={arg('standstill_hold')}",
                  "-p", "use_sim_time:=true", "-p", f"log_csv:={run_dir / 'estimator.csv'}", "-r", "__node:=apex_learned_odometry"],
             output="screen",
         ),
@@ -233,12 +233,16 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument("seed", default_value="1"),
         DeclareLaunchArgument("laps", default_value="2"),
         DeclareLaunchArgument("sensor_profile", default_value="APEX_real"),
-        DeclareLaunchArgument("checkpoint", default_value=str(sim / "learning" / "outputs" / "real2sim_v5_10hz" / "hybrid_submap_v4" / "best_model.pt")),
+        DeclareLaunchArgument("checkpoint", default_value=str(sim / "learning" / "outputs" / "real2sim_v7e_standstill" / "hybrid_submap_v4" / "best_model.pt")),
         DeclareLaunchArgument("device", default_value="cpu", description="cpu (~20 ms per scan) | cuda"),
         DeclareLaunchArgument("icp_backend", default_value="cdist",
                               description="cdist (torch nearest neighbours) | polar (compiled, the same estimates, ~5x cheaper per scan: polar_icp.py)"),
         DeclareLaunchArgument("net_backend", default_value="torch",
                               description="torch | onnx (the same network run by ONNX Runtime: learning/lidar_imu_pose/onnx_net.py, <checkpoint>.onnx)"),
+        DeclareLaunchArgument("standstill_hold", default_value="true",
+                              description="hold the estimate while the classical ICP confirms a standstill, instead of letting the network "
+                                          "extrapolate outside its training distribution (learning/lidar_imu_pose/standstill.py); "
+                                          "false reproduces the drift"),
         DeclareLaunchArgument("imu_offset_ms", default_value="nan", description="stress test: IMU stamp offset [ms] (nan: per-seed draw of the profile)"),
         DeclareLaunchArgument("lidar_offset_ms", default_value="nan", description="stress test: LiDAR stamp offset [ms] (nan: per-seed draw of the profile)"),
         DeclareLaunchArgument("gyro_bias_z_extra", default_value="0.0", description="stress test: constant added to the published gyro z [rad/s]"),

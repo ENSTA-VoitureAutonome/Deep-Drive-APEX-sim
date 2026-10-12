@@ -314,6 +314,37 @@ def synth_imu(traj: Trajectory, body: dict[str, np.ndarray], cfg: dict[str, Any]
         bias[i, 3:] = s.gyro_bias
         if (fs_a > 0 and np.any(np.abs(s.specific_force) >= fs_a * 0.9999)) or (fs_g > 0 and np.any(np.abs(s.angular_velocity) >= fs_g * 0.9999)):
             saturated += 1
+    # Zero-rate recalibration at rest. The car's WT61PC reports exactly 0.000
+    # rad/s on every sample while the car stands still -- measured on the car,
+    # and something no simulated gyro produces, because its turn-on bias and its
+    # noise are always there. A network that has never seen a perfectly constant
+    # gyro extrapolates badly when it finally does (0.21 against 0.08 m/min of
+    # parked drift, lidar_imu_pose/README.md section 16).
+    #
+    # The gate is the truth, not the firmware's own test. A real module decides
+    # from vibration, which it can do because a driving car always has some; in
+    # here the condition has to separate rest from a straight line at constant
+    # speed, and an inertial sensor cannot. Gating on the true speed reproduces
+    # what the device does without claiming to reproduce how it decides, and it
+    # cannot zero a genuine rotation -- which would put a lie in the stream,
+    # since the bias label has to be zeroed with the measurement.
+    az = cfg.get("gyro_autozero") or {}
+    zeroed = np.zeros(len(idx), dtype=bool)
+    if az:
+        at_rest = (np.linalg.norm(traj.v_w, axis=1) < float(az.get("speed_mps", 0.01))) & (
+            np.linalg.norm(traj.w_w, axis=1) < float(az.get("rate_rps", 0.02)))
+        # Only where the whole window around the sample is at rest: the module
+        # needs time to settle, and it stops reporting zero as the car pulls
+        # away rather than half a second later.
+        half = max(1, int(round(0.5 * float(az.get("hold_s", 0.5)) / traj.dt)))
+        c = np.concatenate(([0], np.cumsum(at_rest)))
+        lo = np.clip(np.arange(traj.n) - half, 0, traj.n)
+        hi = np.clip(np.arange(traj.n) + half + 1, 0, traj.n)
+        settled = (c[hi] - c[lo]) == (hi - lo)
+        zeroed = settled[idx]
+        meas[zeroed, 3:] = 0.0
+        bias[zeroed, 3:] = 0.0
+
     # Dropouts: isolated samples and bursts.
     keep = rng.random(len(idx)) >= float(cfg.get("dropout_prob", 0.0))
     bursts = []
@@ -329,6 +360,7 @@ def synth_imu(traj: Trajectory, body: dict[str, np.ndarray], cfg: dict[str, Any]
         "t_report_ns": rep,
         "values": meas[keep],  # ax, ay, az, gx, gy, gz (sensor frame)
         "bias_true": bias[keep],  # bax, bay, baz, bgx, bgy, bgz
+        "gyro_autozeroed": int(zeroed[keep].sum()),
         "n_expected": int(len(idx)),
         "n_dropped": int(np.count_nonzero(~keep)),
         "bursts": bursts,

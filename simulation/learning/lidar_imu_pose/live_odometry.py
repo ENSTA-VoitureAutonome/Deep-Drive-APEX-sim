@@ -35,7 +35,7 @@ propagated with the IMU up to the latest sample (``predict``, for control).
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import math
 from pathlib import Path
 import threading
@@ -45,9 +45,10 @@ from typing import Any
 import numpy as np
 import torch
 
-from icp_odometry import ICP_VARIANTS, IcpStream, deskew, fp32_matmul
+from icp_odometry import ICP_VARIANTS, IcpStream, deskew, fp32_matmul, with_association
 from sqlite_streams import bin_time_fraction, gyro_profile, icp_features, imu_interval_stats
 from sqlite_windows import G, _trapz
+from standstill import StandstillConfig, StandstillHold
 from streaming_model import load_checkpoint
 
 UNITS = (0.01, 0.01, 0.001)  # sigma units of the network (cm, cm, mrad)
@@ -112,11 +113,17 @@ class Estimate:
 
 class LiveOdometry:
     def __init__(self, checkpoint: str | Path, lidar: LidarCalibration, device: str = "cuda", imu_wait_s: float = 0.03,
-                 imu_rate_hz: float | None = None, imu_group_delay_s: float = 0.0) -> None:
+                 imu_rate_hz: float | None = None, imu_group_delay_s: float = 0.0, icp_backend: str = "", net_backend: str = "",
+                 standstill: StandstillConfig | None = None) -> None:
         self.device = torch.device(device if (device != "cuda" or torch.cuda.is_available()) else "cpu")
+        self.checkpoint = Path(checkpoint)
         self.model, ck = load_checkpoint(checkpoint, self.device)
         self.hybrid = bool(self.model.hybrid)
         self.icp_cfg = ICP_VARIANTS[ck["config"].get("icp_variant", "scan")] if self.hybrid else None
+        # icp_backend "cdist" / "polar": the nearest-neighbour search of the classical odometry (same estimates;
+        # polar_icp.py is the compiled one for the car); empty: the checkpoint's variant as it is.
+        if self.hybrid and icp_backend:
+            self.icp_cfg = with_association(self.icp_cfg, icp_backend)
         # IMU stamps moved back by the chip filter delay of the sensor profile
         # (sqlite_windows.imu_group_delay_s), as in training.
         self.imu_delay_ns = int(round(imu_group_delay_s * 1e9)) if ck["config"].get("imu_delay_comp", False) else 0
@@ -135,8 +142,27 @@ class LiveOdometry:
         self.geo = (self.t_inc, self.xy, self.amin, self.ainc, beam_time)
         if self.hybrid:
             sig = torch.tensor([[lidar.sigma_const_m, lidar.sigma_prop]], device=dev)
-            self.icp = IcpStream(self.icp_cfg, self.geo, sig, lidar.beams, dev)
+            if self.icp_cfg.association == "polar":
+                from polar_icp import PolarIcpStream
+                self.icp = PolarIcpStream(self.icp_cfg, self.geo, sig, lidar.beams, dev)
+            else:
+                self.icp = IcpStream(self.icp_cfg, self.geo, sig, lidar.beams, dev)
+        # Standing still is outside the network's training distribution and it
+        # invents forward motion there (standstill.py): while the classical ICP
+        # confirms a standstill, its increment is used and the network is not
+        # stepped. Off for the non-hybrid models, which have no ICP to fall
+        # back on.
+        cfg = standstill if standstill is not None else StandstillConfig()
+        self.hold = StandstillHold(replace(cfg, enable=cfg.enable and self.hybrid))
+        # The uncertainty of a held increment is the ICP's own, floored at the
+        # priors its zero-velocity update used: truthful, and never zero.
+        self._hold_sigma_floor = np.zeros(3) if not self.hybrid else np.array(
+            [self.icp_cfg.standstill_sigma_m, self.icp_cfg.standstill_sigma_m, self.icp_cfg.gyro_noise_rad * 0.2])
         self.state = self.model.initial_state(1, dev)
+        # net_backend "onnx": the same weights run by ONNX Runtime (onnx_net.py, <checkpoint>.onnx; one compiled
+        # call per scan instead of ~417 torch calls); empty / "torch": PyTorch.
+        if net_backend and net_backend != "torch":
+            self.use_net_backend(net_backend)
         self._imu_t: deque[int] = deque()
         self._imu_v: deque[np.ndarray] = deque()  # raw ax ay az gx gy gz
         self._pending: deque[tuple[int, np.ndarray, float, int]] = deque()  # stamp, ranges, scan_time, arrival
@@ -152,6 +178,17 @@ class LiveOdometry:
         # The IMU side (add_imu, predict) and the scan side (process) may run
         # in different threads: the propagation must not wait for a scan.
         self.lock = threading.RLock()
+
+    def use_net_backend(self, backend: str) -> None:
+        """Run the network with ``backend`` ("onnx") from the next scan on, from a fresh state."""
+        if backend != "onnx":
+            raise ValueError(f"unknown network backend {backend!r}")
+        from onnx_net import OnnxStreamingNet, onnx_path  # noqa: PLC0415
+
+        if not onnx_path(self.checkpoint).exists():
+            raise FileNotFoundError(f"{onnx_path(self.checkpoint)}: export it first (python onnx_net.py export --checkpoint ...)")
+        self.model = OnnxStreamingNet(self.checkpoint, self.hybrid, int(self.model.hidden), threads=max(1, torch.get_num_threads()))
+        self.state = self.model.initial_state(1, self.device)
 
     # ----------------------------------------------------------------- input
     def add_imu(self, stamp_ns: int, gyro: np.ndarray, accel: np.ndarray) -> None:
@@ -274,6 +311,7 @@ class LiveOdometry:
         if self.beam_frac is not None:
             batch["beam_frac"] = self.beam_frac[None, None]
         icp_info: dict[str, float] = {}
+        hold = False
         with torch.no_grad():
             if self.hybrid:
                 b1 = {k: v[:, 0] for k, v in batch.items() if k not in ("imu", "imu_lengths", "beam_frac")}
@@ -283,11 +321,26 @@ class LiveOdometry:
                 batch["icp_pred"], batch["icp_feat"] = pred[None], feat[None]
                 icp_info = {k: float(res[k][0]) for k in ("standstill", "eig_ratio", "gyro_bias", "map_used")}
                 icp_info.update(icp_dx=float(res["pred"][0, 0]), icp_dy=float(res["pred"][0, 1]), icp_dyaw=float(res["pred"][0, 2]))
-            out, self.state = self.model(batch, self.state)
-        delta = out["delta"][0, 0].double().cpu().numpy()
-        sigma = (torch.exp(0.5 * out["logvar"][0, 0]) * torch.tensor(UNITS, device=dev)).cpu().numpy()
-        velocity = out["velocity"][0, 0].double().cpu().numpy()
-        bias = out["bias"][0, 0].double().cpu().numpy()
+                hold = self.hold.update(icp_info["standstill"] > 0.5, math.hypot(icp_info["icp_dx"], icp_info["icp_dy"]),
+                                        icp_info["icp_dyaw"], icp_info["eig_ratio"])
+                icp_info["hold"] = float(hold)
+            if not hold:
+                out, self.state = self.model(batch, self.state)
+        if hold:
+            # The ICP's own zero-velocity solution, and the network left exactly
+            # as it was when the car stopped (standstill.py). Only the velocity
+            # state is touched: it is the one quantity a parked car knows.
+            delta = res["pred"][0].double().cpu().numpy()
+            sigma = np.maximum(res["sigma"][0].double().cpu().numpy(), self._hold_sigma_floor)
+            velocity = np.zeros(2)
+            bias = self.bias.copy()
+            self.state["v"] = torch.zeros_like(self.state["v"])
+            self.health.count("standstill_hold")
+        else:
+            delta = out["delta"][0, 0].double().cpu().numpy()
+            sigma = (torch.exp(0.5 * out["logvar"][0, 0]) * torch.tensor(UNITS, device=dev)).cpu().numpy()
+            velocity = out["velocity"][0, 0].double().cpu().numpy()
+            bias = out["bias"][0, 0].double().cpu().numpy()
         # Scan k de-skewed to its stamp with the state at the stamp.
         with torch.no_grad(), fp32_matmul():
             pts = deskew(cur_r[None], cur_v[None], torch.tensor([w_cur - bias[0]], dtype=torch.float32, device=dev),
@@ -329,21 +382,33 @@ class LiveOdometry:
             bias = self.bias.copy()
             t_prev = self.last_stamp_ns
             samples = [(t, val) for t, val in zip(self._imu_t, self._imu_v) if t > t_prev]
-        rate = 0.0
-        for t, val in samples:
-            dt = (t - t_prev) * 1e-9
-            a = val[:2] - bias[1:]
-            rate = val[5] - bias[0]
-            dyaw = rate * dt
-            c, s = math.cos(pose[2]), math.sin(pose[2])
-            pose[0] += (c * v[0] - s * v[1]) * dt
-            pose[1] += (s * v[0] + c * v[1]) * dt
-            v = v + a * dt
-            cd, sd = math.cos(dyaw), math.sin(dyaw)
-            v = np.array([cd * v[0] + sd * v[1], -sd * v[0] + cd * v[1]])
-            pose[2] += dyaw
-            t_prev = t
-        return t_prev, pose, v, rate
+        return propagate_imu(pose, v, bias, t_prev, samples)
+
+
+def propagate_imu(pose: np.ndarray, velocity: np.ndarray, bias: np.ndarray, t0_ns: int,
+                  samples: list[tuple[int, np.ndarray]]) -> tuple[int, np.ndarray, np.ndarray, float]:
+    """Dead reckoning of ``predict``: the pose [x, y, yaw] and body velocity
+    at ``t0_ns`` carried through the IMU ``samples`` (stamp, raw ax ay az gx
+    gy gz) after it, with the biases [gyro z, accel x, accel y] removed.
+    Returns (stamp of the last sample, pose, velocity, last yaw rate)."""
+    pose = np.array(pose, dtype=np.float64)
+    v = np.array(velocity, dtype=np.float64)
+    t_prev = t0_ns
+    rate = 0.0
+    for t, val in samples:
+        dt = (t - t_prev) * 1e-9
+        a = val[:2] - bias[1:]
+        rate = val[5] - bias[0]
+        dyaw = rate * dt
+        c, s = math.cos(pose[2]), math.sin(pose[2])
+        pose[0] += (c * v[0] - s * v[1]) * dt
+        pose[1] += (s * v[0] + c * v[1]) * dt
+        v = v + a * dt
+        cd, sd = math.cos(dyaw), math.sin(dyaw)
+        v = np.array([cd * v[0] + sd * v[1], -sd * v[0] + cd * v[1]])
+        pose[2] += dyaw
+        t_prev = t
+    return t_prev, pose, v, rate
 
 
 class _Health:

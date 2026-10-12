@@ -49,6 +49,9 @@ def main() -> None:
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--checkpoints", nargs="+", required=True, help="name=path")
     ap.add_argument("--splits", nargs="+", default=["validation", "test"])
+    ap.add_argument("--icp-association", choices=("cdist", "polar"), default="cdist",
+                    help="nearest-neighbour search of the classical odometry (polar: polar_icp.py, the same algorithm compiled)")
+    ap.add_argument("--variants", type=int, nargs="+", default=[0, 1], help="0: stored runs, 1: one perturbed copy")
     args = ap.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -66,7 +69,7 @@ def main() -> None:
         nets[name] = (model, ck["config"])
     summary: dict[str, Any] = {"robust_config": str(args.robust), "robust_tag": rcfg.tag(), "checkpoints": {n: dict(c) for n, (_, c) in nets.items()}, "results": {}}
     for split in args.splits:
-        for variant in (0, 1):
+        for variant in args.variants:
             name = f"{split}_{'plain' if variant == 0 else 'perturbed'}"
             data = load_split_variants(args.db, CACHE, split, True, rcfg, [variant])
             _label_runs(data)
@@ -75,14 +78,28 @@ def main() -> None:
             tag = variants_tag(rcfg, [variant])
             res = {}
             for net_name, (model, cfg) in nets.items():
-                icp = load_or_run_icp(split, sd, args.out, log, cfg["icp_variant"], args.db, bool(cfg.get("imu_delay_comp", False)), tag)
+                icp_variant = cfg["icp_variant"] + ("_polar" if args.icp_association == "polar" else "")
+                icp = load_or_run_icp(split, sd, args.out, log, icp_variant, args.db, bool(cfg.get("imu_delay_comp", False)), tag)
+                if f"classical_{icp_variant}" not in res:  # the classical odometry alone
+                    mc = om.evaluate(icp["pred"].numpy().astype(np.float64), truth)
+                    res[f"classical_{icp_variant}"] = mc
+                    log(f"[{name}] classical {icp_variant}: " + ", ".join(f"{k} {mc['all'][k]:.3f}" for k in KEYS))
                 sd.attach_icp(icp)
                 est = stream_predict(model, sd)
                 pred = est["pred"].numpy().astype(np.float64)
                 m = om.evaluate(pred, truth, sigma=est["sigma"].numpy(), groups=("imu_rate", "gyro_bias", "motion") if variant else ("motion",))
                 m["gyro_bias_error_dps"] = _bias_err(est["bias"].numpy()[:, 0], data, np.isfinite(pred).all(axis=1))
+                # Invented motion while parked [mm per revolution]: the mean
+                # translation reported where the car's true body speed is under
+                # 1 cm/s. Standing still is the regime v5 was never shown, and
+                # where it walks away from itself (README section 15); this is
+                # the number a model has to bring down, on data it never saw.
+                still = (torch.linalg.vector_norm(data["v_body"], dim=1) < 0.01).numpy() & np.isfinite(pred).all(axis=1)
+                m["still_mm"] = float(1e3 * np.linalg.norm(pred[still, :2], axis=1).mean()) if still.any() else float("nan")
+                m["still_n"] = int(still.sum())
                 res[net_name] = m
-                log(f"[{name}] {net_name}: " + ", ".join(f"{k} {m['all'][k]:.3f}" for k in KEYS) + f", gyro bias err {m['gyro_bias_error_dps']:.3f} deg/s")
+                log(f"[{name}] {net_name}: " + ", ".join(f"{k} {m['all'][k]:.3f}" for k in KEYS)
+                    + f", gyro bias err {m['gyro_bias_error_dps']:.3f} deg/s, parked {m['still_mm']:.3f} mm over {m['still_n']} intervals")
                 if variant:
                     for g in ("imu_rate", "gyro_bias"):
                         log("    " + " | ".join(f"{g}={k}: t_rel {v['t_rel_pct']:.2f} %, r_rel {v['r_rel_degpm']:.3f}" for k, v in m[g].items()))

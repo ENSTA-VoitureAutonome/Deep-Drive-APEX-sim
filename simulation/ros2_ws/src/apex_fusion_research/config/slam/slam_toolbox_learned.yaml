@@ -6,6 +6,15 @@
 #   scan_topic                the revolution de-skewed to that stamp by the
 #                             odometry (the raw A2M8 scan is distorted by the
 #                             motion during its ~77 ms sweep)
+#
+# Scan-matcher tuning (2026-09-29; tools/analysis/replay_slam.py, recorded v5
+# runs replayed offline, README of learning/lidar_imu_pose §11). With the
+# defaults, the matcher's response surface was nearly flat (10 cm smear):
+# on lap 1 it moved the heading in random 0.2 deg steps at every scan and
+# ended no better than the odometry alone (open-loop error > 0.5 m in 29 %
+# of runs, up to 1.8 m; race error p95 > 0.35 m in 17 %). A sharper
+# correlation grid and fewer matches at low speed give 1 % and 6 %, and
+# they hold with an odometry 2-3x worse than the simulated one.
 /**:
   ros__parameters:
     use_sim_time: true
@@ -28,8 +37,9 @@
 
     use_scan_matching: true
     use_scan_barycenter: true
-    minimum_travel_distance: 0.05
-    minimum_travel_heading: 0.05
+    minimum_travel_distance: 0.2  # was 0.05; binds only below ~1 m/s (0.2 s between processed scans)
+    minimum_travel_heading: 0.15  # was 0.05
+    correlation_search_space_smear_deviation: 0.03  # was 0.1 (default); 0.02 is worse again
     scan_buffer_size: 20
     scan_buffer_maximum_scan_distance: 15.0
     link_match_minimum_response_fine: 0.1
