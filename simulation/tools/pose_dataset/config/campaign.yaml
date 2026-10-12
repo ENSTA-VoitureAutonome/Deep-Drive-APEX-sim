@@ -94,6 +94,61 @@ presets:
       - {split: test, tracks: [test_unseen], motions: *all_motions, sensors: [APEX_real], seeds: [1, 2, 3, 4, 5]}
       - {split: test, tracks: [test_unseen], motions: [slow, slow_variable, slow_stop_and_go], sensors: [APEX_real], seeds: [1, 2, 3], laps: 1.0}
 
+  full_v3:
+    role: main
+    sensor_backend: gazebo_native
+    description: >-
+      Dataset v3: the full_v2 tracks, motions and seeds with the v3 APEX_real
+      profile: the A2M8 in Express scan (4 kHz, supported by every firmware)
+      and the widened realism (datasheet gyro bias, warm-up drift, stamp
+      offsets and jitter, IMU and revolution losses). Write it to its own
+      database, e.g. data/multiscenario_pose/pose_dataset_v3.sqlite3.
+      Generated when APEX_real turned at 13.03 Hz (now APEX_real_express13).
+    laps: 2.0
+    groups:
+      - {split: train, tracks: *train_tracks, motions: *all_motions, sensors: [APEX_real], seeds: [1, 2, 3, 4, 5, 6]}
+      - {split: train, tracks: *train_tracks, motions: [slow, slow_variable, slow_stop_and_go], sensors: [APEX_real], seeds: [1, 2, 3], laps: 1.0}
+      - {split: validation, tracks: [val_mixed], motions: *all_motions, sensors: [APEX_real], seeds: [1, 2, 3, 4, 5]}
+      - {split: validation, tracks: [val_mixed], motions: [slow, slow_variable, slow_stop_and_go], sensors: [APEX_real], seeds: [1, 2, 3], laps: 1.0}
+      - {split: test, tracks: [test_unseen], motions: *all_motions, sensors: [APEX_real], seeds: [1, 2, 3, 4, 5]}
+      - {split: test, tracks: [test_unseen], motions: [slow, slow_variable, slow_stop_and_go], sensors: [APEX_real], seeds: [1, 2, 3], laps: 1.0}
+
+  full_v4:
+    role: main
+    sensor_backend: gazebo_native
+    description: >-
+      Dataset v4: the full_v3 tracks, motions, seeds and realism with the A2M8
+      in Express scan at 10 Hz (APEX_real): 400 samples per revolution. Write
+      it to its own database, e.g. data/multiscenario_pose/pose_dataset_v4.sqlite3.
+    laps: 2.0
+    groups:
+      - {split: train, tracks: *train_tracks, motions: *all_motions, sensors: [APEX_real], seeds: [1, 2, 3, 4, 5, 6]}
+      - {split: train, tracks: *train_tracks, motions: [slow, slow_variable, slow_stop_and_go], sensors: [APEX_real], seeds: [1, 2, 3], laps: 1.0}
+      - {split: validation, tracks: [val_mixed], motions: *all_motions, sensors: [APEX_real], seeds: [1, 2, 3, 4, 5]}
+      - {split: validation, tracks: [val_mixed], motions: [slow, slow_variable, slow_stop_and_go], sensors: [APEX_real], seeds: [1, 2, 3], laps: 1.0}
+      - {split: test, tracks: [test_unseen], motions: *all_motions, sensors: [APEX_real], seeds: [1, 2, 3, 4, 5]}
+      - {split: test, tracks: [test_unseen], motions: [slow, slow_variable, slow_stop_and_go], sensors: [APEX_real], seeds: [1, 2, 3], laps: 1.0}
+
+  park_v5:
+    role: main
+    sensor_backend: gazebo_native
+    description: >-
+      The standstill supplement to dataset v4: the same tracks, sensors and
+      realism, driven with the `parked_long` motion profile so every run holds
+      tens of seconds of true standstill. Generate it with --resume into a copy
+      of pose_dataset_v4.sqlite3 (it only adds these runs). Train split only:
+      the validation and test metrics are relative to the path driven, which a
+      parked run does not have, and the held-out standstill check is
+      tools/analysis/standstill_drift.py.
+    laps: 1.0
+    groups:
+      - {split: train, tracks: *train_tracks, motions: [parked_long], sensors: [APEX_real], seeds: [1, 2, 3]}
+      # The same trajectories under the profile that adds the WT61PC's zero-rate
+      # recalibration at rest, so the training stream holds both of the static
+      # signatures the car can present: a gyro with its turn-on bias and its
+      # noise, and one reporting exactly 0.000 rad/s.
+      - {split: train, tracks: *train_tracks, motions: [parked_long], sensors: [APEX_real_az], seeds: [1, 2, 3]}
+
   zeroshot:
     role: zeroshot
     description: >-

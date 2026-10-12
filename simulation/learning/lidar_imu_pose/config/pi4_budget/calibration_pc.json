@@ -1,0 +1,123 @@
+{
+ "kind": "calibration",
+ "machine": {
+  "host": "DESKTOP-PGG678M",
+  "machine": "x86_64",
+  "cpu_model": "Intel(R) Core(TM) Ultra 7 155H",
+  "board": null,
+  "cpus": 16,
+  "python": "3.12.3",
+  "torch": "2.11.0+cu128",
+  "numpy": "1.26.4",
+  "torch_threads": 1,
+  "affinity": [
+   2
+  ],
+  "governor": null,
+  "max_freq_khz": null,
+  "cur_freq_khz": null,
+  "temp_c": null,
+  "wsl": true,
+  "torch_config": [
+   "PyTorch built with:",
+   "  - GCC 13.3",
+   "  - C++ Version: 201703",
+   "  - Intel(R) oneAPI Math Kernel Library Version 2024.2-Product Build 20240605 for Intel(R) 64 architecture applications",
+   "  - Intel(R) MKL-DNN v3.10.2 (Git Hash f1d471933dc852f956fd05389f9313c7148783d5)",
+   "  - OpenMP 201511 (a.k.a. OpenMP 4.5)",
+   "  - LAPACK is enabled (usually provided by MKL)",
+   "  - NNPACK is enabled",
+   "  - CPU capability usage: AVX2",
+   "  - CUDA Runtime 12.8",
+   "  - NVCC architecture flags: -gencode;arch=compute_75,code=sm_75;-gencode;arch=compute_80,code=sm_80;-gencode;arch=compute_86,code=sm_86;-gencode;arch=compute_90,code=sm_90;-gencode;arch=compute_100,code=sm_100;-gencode;arch=compute_120,code=sm_120",
+   "  - CuDNN 91.9  (built against CUDA 12.9)",
+   "  - Magma 2.6.1",
+   "  - Build settings: BLAS_INFO=mkl, BUILD_TYPE=Release, COMMIT_SHA=70d99e998b4955e0049d13a98d77ae1b14db1f45, CUDA_VERSION=12.8, CUDNN_VERSION=9.19.0, CXX_COMPILER=/opt/rh/gcc-toolset-13/root/usr/bin/c++, CXX_FLAGS= -fvisibility-inlines-hidden -DUSE_PTHREADPOOL -DNDEBUG -DUSE_KINETO -DLIBKINETO_NOROCTRACER -DLIBKINETO_NOXPUPTI=ON -DUSE_FBGEMM -DUSE_MSLK -DUSE_PYTORCH_QNNPACK -DUSE_XNNPACK -DSYMBOLICATE_MOBILE_DEBUG_HANDLE -O2 -fPIC -DC10_NODEPRECATED -Wall -Wextra -Werror=return-type -Werror=non-virtual-dtor -Werror=range-loop-construct -Werror=bool-operation -Wnarrowing -Wno-missing-field-initializers -Wno-unknown-pragmas -Wno-unused-parameter -Wno-strict-overflow -Wno-strict-aliasing -Wno-stringop-overflow -Wsuggest-override -Wno-psabi -Wno-error=old-style-cast -faligned-new -Wno-maybe-uninitialized -fno-math-errno -fno-trapping-math -Werror=format -Wno-dangling-reference -Wno-error=dangling-reference -Wno-stringop-overflow, LAPACK_INFO=mkl, PERF_WITH_AVX=1, PERF_WITH_AVX2=1, TORCH_VERSION=2.11.0, USE_CUDA=ON, USE_CUDNN=ON, USE_CUSPARSELT=1, USE_GFLAGS=OFF, USE_GLOG=OFF, USE_GLOO=ON, USE_MKL=ON, USE_MKLDNN=ON, USE_MPI=OFF, USE_NCCL=1, USE_NNPACK=ON, USE_OPENMP=ON, USE_ROCM=OFF, USE_ROCM_KERNEL_ASSERT=OFF, USE_XCCL=OFF, USE_XPU=OFF, "
+  ],
+  "date": "2026-09-29 09:27:33"
+ },
+ "background_streams": 0,
+ "reference_us": {
+  "before": 38.19496598016229,
+  "after": 36.03568894663656,
+  "drift": -0.056533026751410476
+ },
+ "small_op_us": 5.594537235253938,
+ "benchmarks": {
+  "op_add_1": {
+   "class": "dispatch",
+   "us": 1.009906982929465
+  },
+  "op_mul_360": {
+   "class": "dispatch",
+   "us": 2.379691281362284
+  },
+  "op_where_360": {
+   "class": "dispatch",
+   "us": 5.594537235253938
+  },
+  "op_cat_3x360": {
+   "class": "dispatch",
+   "us": 1.150594741261557
+  },
+  "op_index_gather": {
+   "class": "dispatch",
+   "us": 7.99864085365698
+  },
+  "op_einsum_jtwj": {
+   "class": "dispatch",
+   "us": 16.864028054897062
+  },
+  "op_solve_3x3": {
+   "class": "dispatch",
+   "us": 12.074979991893997
+  },
+  "py_propagate_imu_20": {
+   "class": "python",
+   "us": 63.64734576891351
+  },
+  "np_interp_17": {
+   "class": "python",
+   "us": 0.6628281088438825
+  },
+  "np_searchsorted": {
+   "class": "python",
+   "us": 0.7435444473458119
+  },
+  "conv_stack_pair": {
+   "class": "compute",
+   "us": 491.9808288832428,
+   "gflops": 33.30627341149658
+  },
+  "gemv_grucell_128": {
+   "class": "mem_cache",
+   "us": 23.301689196841835,
+   "gflops": 8.43749988849079
+  },
+  "gemv_linear_287x128": {
+   "class": "mem_cache",
+   "us": 5.820299676884133,
+   "gflops": 12.623404992667465
+  },
+  "elementwise_256k": {
+   "class": "mem_cache",
+   "us": 15.340483884074274
+  },
+  "cdist_min_360x360": {
+   "class": "mem_cache",
+   "us": 148.8551483816991
+  },
+  "cdist_min_360x1800": {
+   "class": "mem_dram",
+   "us": 712.9949535737978
+  },
+  "elementwise_2p6MB": {
+   "class": "mem_dram",
+   "us": 1235.515155713074
+  },
+  "polar_icp_step": {
+   "class": "native",
+   "us": 620.0244370120345
+  }
+ }
+}

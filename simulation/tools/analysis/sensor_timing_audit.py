@@ -2,15 +2,18 @@
 """Audit the timing of recorded LiDAR / IMU streams against a sensor profile.
 
 The learned odometry is trained on sensors with the timing of a profile of
-``tools/pose_dataset/config/sensors.yaml`` (``APEX_real``: RPLIDAR A2M8 at its
-~13 Hz rotation, LSM6DS3 at its 104 Hz output data rate, stamps at the
+``tools/pose_dataset/config/sensors.yaml`` (``APEX_real``: RPLIDAR A2M8 in the
+Express scan at 10 Hz, LSM6DS3 at its 104 Hz output data rate, stamps at the
 physical sampling instants). This tool checks whether a recording meets that
 timing, so the same criteria judge the simulation and the real car
 (``real_vehicle/docs/sensor_timing_requirements.md``).
 
 Inputs (auto-detected in the directory):
 * real car recordings (``real_vehicle/data/...``): ``imu_raw.csv``
-  (stamp_sec, stamp_nanosec, ax..gz) and ``lidar_points.csv`` (one row per
+  (stamp_sec, stamp_nanosec, ax..gz) and either ``lidar_scans.csv``
+  (stamp_ns, scan_time_s, r0..r359: ``/lidar/scan_raw`` as recorded by
+  ``real_vehicle/ros2_ws/scripts/capture/record_real2sim_sensors.py``, the
+  simulation's format) or ``lidar_points.csv`` (older recorders: one row per
   valid point with its scan index);
 * real2sim runs (``simulation/data/real2sim/<run>``): ``imu_raw.csv`` and
   ``truth_scans.csv`` (stamp_ns, valid_bins).
@@ -66,6 +69,13 @@ def _lidar(d: Path) -> tuple[np.ndarray, np.ndarray] | None:
             return None
         order = np.argsort(a["stamp_ns"])
         return a["stamp_ns"][order] * 1e-9, a["valid_bins"][order]
+    scans = d / "lidar_scans.csv"
+    if scans.exists():
+        a = np.genfromtxt(scans, delimiter=",", skip_header=1)
+        if a.ndim != 2 or len(a) < 3:
+            return None
+        order = np.argsort(a[:, 0])
+        return a[order, 0] * 1e-9, np.isfinite(a[order, 2:]).sum(axis=1).astype(float)
     real = d / "lidar_points.csv"
     if not real.exists():
         return None

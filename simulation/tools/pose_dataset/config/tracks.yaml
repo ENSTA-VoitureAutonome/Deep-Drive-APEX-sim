@@ -204,6 +204,68 @@ tracks:
     hall: {margin: 3.0}
     decoration_seed: 83
 
+  zs_real_narrow_oval:
+    # The real car's lap is 10-15 m, a tenth of the simulator's tracks, so the
+    # usual floor on the lap length does not apply (tests/test_tracks_campaign).
+    min_reference_length_m: 10.0
+    family: narrow_oval_real
+    role: zero_shot
+    held_out: true
+    description: >-
+      ZERO-SHOT (not in any database): the real car's envelope of 2026-10-10 -
+      a 1.1 m corridor and a ~14 m lap, the size the car actually drives, but
+      with 1.2 m corner radii instead of the 1.0 m of zs_real_track_replica.
+      It exists to separate the two variables of the narrow-track failure: the
+      corridor width and the corner radius. A car limited to 12.5 deg needs a
+      path radius of 1.35 m, which a 1.1 m corridor only affords over a
+      centreline radius of about 1.05 m.
+    vertices: [[0, 0], [4.5, 0], [4.5, 3.0], [0, 3.0]]
+    radii: [1.2, 1.2, 1.2, 1.2]
+    widths: [1.1, 1.1, 1.1, 1.1]
+    wall_style: {left: wall, right: wall}
+    decoration: {count: 8, extent: 2.0}
+    hall: {margin: 2.5}
+    decoration_seed: 91
+
+  zs_real_open_corner_oval:
+    # The real car's lap is 10-15 m, a tenth of the simulator's tracks, so the
+    # usual floor on the lap length does not apply (tests/test_tracks_campaign).
+    min_reference_length_m: 10.0
+    family: narrow_oval_real
+    role: zero_shot
+    held_out: true
+    description: >-
+      ZERO-SHOT (not in any database): the same 1.1 m corridor and ~14 m lap as
+      zs_real_narrow_oval, with 1.5 m corner radii. It answers the question the
+      other two pose: how open the corners have to be for a car limited to
+      12.5 deg of steering, once the servo's own gain error is drawn.
+    vertices: [[0, 0], [5.0, 0], [5.0, 3.5], [0, 3.5]]
+    radii: [1.5, 1.5, 1.5, 1.5]
+    widths: [1.1, 1.1, 1.1, 1.1]
+    wall_style: {left: wall, right: wall}
+    decoration: {count: 8, extent: 2.0}
+    hall: {margin: 2.5}
+    decoration_seed: 93
+
+  zs_real_wide_oval:
+    # The real car's lap is 10-15 m, a tenth of the simulator's tracks, so the
+    # usual floor on the lap length does not apply (tests/test_tracks_campaign).
+    min_reference_length_m: 10.0
+    family: narrow_oval_real
+    role: zero_shot
+    held_out: true
+    description: >-
+      ZERO-SHOT (not in any database): the same ~14 m lap and 1.5 m corners as
+      zs_real_open_corner_oval in a 1.3 m corridor instead of 1.1 m. It
+      measures what 20 cm of extra lane is worth to the lap-1 driver.
+    vertices: [[0, 0], [5.0, 0], [5.0, 3.5], [0, 3.5]]
+    radii: [1.5, 1.5, 1.5, 1.5]
+    widths: [1.3, 1.3, 1.3, 1.3]
+    wall_style: {left: wall, right: wall}
+    decoration: {count: 8, extent: 2.0}
+    hall: {margin: 2.5}
+    decoration_seed: 95
+
   zs_real_track_replica:
     family: l_boot_real_like
     role: zero_shot

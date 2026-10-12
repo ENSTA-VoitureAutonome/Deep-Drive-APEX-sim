@@ -1,0 +1,6298 @@
+{
+ "kind": "sweep",
+ "machine": {
+  "host": "DESKTOP-PGG678M",
+  "machine": "x86_64",
+  "cpu_model": "Intel(R) Core(TM) Ultra 7 155H",
+  "board": null,
+  "cpus": 16,
+  "python": "3.12.3",
+  "torch": "2.11.0+cu128",
+  "numpy": "1.26.4",
+  "torch_threads": 1,
+  "affinity": [
+   2
+  ],
+  "governor": null,
+  "max_freq_khz": null,
+  "cur_freq_khz": null,
+  "temp_c": null,
+  "wsl": true,
+  "torch_config": [
+   "PyTorch built with:",
+   "  - GCC 13.3",
+   "  - C++ Version: 201703",
+   "  - Intel(R) oneAPI Math Kernel Library Version 2024.2-Product Build 20240605 for Intel(R) 64 architecture applications",
+   "  - Intel(R) MKL-DNN v3.10.2 (Git Hash f1d471933dc852f956fd05389f9313c7148783d5)",
+   "  - OpenMP 201511 (a.k.a. OpenMP 4.5)",
+   "  - LAPACK is enabled (usually provided by MKL)",
+   "  - NNPACK is enabled",
+   "  - CPU capability usage: AVX2",
+   "  - CUDA Runtime 12.8",
+   "  - NVCC architecture flags: -gencode;arch=compute_75,code=sm_75;-gencode;arch=compute_80,code=sm_80;-gencode;arch=compute_86,code=sm_86;-gencode;arch=compute_90,code=sm_90;-gencode;arch=compute_100,code=sm_100;-gencode;arch=compute_120,code=sm_120",
+   "  - CuDNN 91.9  (built against CUDA 12.9)",
+   "  - Magma 2.6.1",
+   "  - Build settings: BLAS_INFO=mkl, BUILD_TYPE=Release, COMMIT_SHA=70d99e998b4955e0049d13a98d77ae1b14db1f45, CUDA_VERSION=12.8, CUDNN_VERSION=9.19.0, CXX_COMPILER=/opt/rh/gcc-toolset-13/root/usr/bin/c++, CXX_FLAGS= -fvisibility-inlines-hidden -DUSE_PTHREADPOOL -DNDEBUG -DUSE_KINETO -DLIBKINETO_NOROCTRACER -DLIBKINETO_NOXPUPTI=ON -DUSE_FBGEMM -DUSE_MSLK -DUSE_PYTORCH_QNNPACK -DUSE_XNNPACK -DSYMBOLICATE_MOBILE_DEBUG_HANDLE -O2 -fPIC -DC10_NODEPRECATED -Wall -Wextra -Werror=return-type -Werror=non-virtual-dtor -Werror=range-loop-construct -Werror=bool-operation -Wnarrowing -Wno-missing-field-initializers -Wno-unknown-pragmas -Wno-unused-parameter -Wno-strict-overflow -Wno-strict-aliasing -Wno-stringop-overflow -Wsuggest-override -Wno-psabi -Wno-error=old-style-cast -faligned-new -Wno-maybe-uninitialized -fno-math-errno -fno-trapping-math -Werror=format -Wno-dangling-reference -Wno-error=dangling-reference -Wno-stringop-overflow, LAPACK_INFO=mkl, PERF_WITH_AVX=1, PERF_WITH_AVX2=1, TORCH_VERSION=2.11.0, USE_CUDA=ON, USE_CUDNN=ON, USE_CUSPARSELT=1, USE_GFLAGS=OFF, USE_GLOG=OFF, USE_GLOO=ON, USE_MKL=ON, USE_MKLDNN=ON, USE_MPI=OFF, USE_NCCL=1, USE_NNPACK=ON, USE_OPENMP=ON, USE_ROCM=OFF, USE_ROCM_KERNEL_ASSERT=OFF, USE_XCCL=OFF, USE_XPU=OFF, "
+  ],
+  "date": "2026-09-29 00:16:34"
+ },
+ "checkpoint": "/home/santiago/AiAtonomousRc/simulation/learning/outputs/real2sim_v5_10hz/hybrid_submap_v4/best_model.pt",
+ "threads": 1,
+ "network": {
+  "batches": 240,
+  "points": [
+   {
+    "params": {
+     "total": 55209,
+     "pair_encoder": 22440,
+     "imu_encoder": 13136,
+     "measure": 1539,
+     "inp": 3072,
+     "cells": 12672,
+     "gain_head": 613,
+     "residual_head": 579,
+     "bias_head": 579,
+     "logvar_head": 579
+    },
+    "macs": {
+     "total": 1547424.0,
+     "pair_encoder": 1244160.0,
+     "imu_encoder": 284160.0,
+     "measure": 1504.0,
+     "inp": 3040.0,
+     "cells": 12288.0,
+     "gain_head": 592.0,
+     "residual_head": 560.0,
+     "bias_head": 560.0,
+     "logvar_head": 560.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 3.368396288715303,
+     "p50": 2.6994795189239085,
+     "p95": 5.223332863533869,
+     "p99": 7.096304786391556,
+     "max": 83.37523497175425
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 5.314838333333295,
+     "compute": 0.6070729000000028
+    },
+    "max_ws_mb": 0.022216796875,
+    "hidden": 32,
+    "pair_widths": [
+     16,
+     24,
+     32,
+     48
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 132905,
+     "pair_encoder": 31688,
+     "imu_encoder": 27152,
+     "measure": 5123,
+     "inp": 10240,
+     "cells": 49920,
+     "gain_head": 2245,
+     "residual_head": 2179,
+     "bias_head": 2179,
+     "logvar_head": 2179
+    },
+    "macs": {
+     "total": 1748800.0,
+     "pair_encoder": 1253376.0,
+     "imu_encoder": 422400.0,
+     "measure": 5056.0,
+     "inp": 10176.0,
+     "cells": 49152.0,
+     "gain_head": 2208.0,
+     "residual_head": 2144.0,
+     "bias_head": 2144.0,
+     "logvar_head": 2144.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 3.5869692140047182,
+     "p50": 3.2333069830201566,
+     "p95": 5.98631039028987,
+     "p99": 7.551475634099917,
+     "max": 9.113175910897553
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 3.666878533333316,
+     "compute": 0.3939947000000132,
+     "mem_cache": 0.04583843333333219
+    },
+    "max_ws_mb": 0.0703125,
+    "hidden": 64,
+    "pair_widths": [
+     16,
+     24,
+     32,
+     48
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 251561,
+     "pair_encoder": 40936,
+     "imu_encoder": 47312,
+     "measure": 10755,
+     "inp": 21504,
+     "cells": 111744,
+     "gain_head": 4901,
+     "residual_head": 4803,
+     "bias_head": 4803,
+     "logvar_head": 4803
+    },
+    "macs": {
+     "total": 2046432.0,
+     "pair_encoder": 1262592.0,
+     "imu_encoder": 622080.0,
+     "measure": 10656.0,
+     "inp": 21408.0,
+     "cells": 110592.0,
+     "gain_head": 4848.0,
+     "residual_head": 4752.0,
+     "bias_head": 4752.0,
+     "logvar_head": 4752.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 3.4349992241583425,
+     "p50": 2.8217690414749086,
+     "p95": 6.09722064109519,
+     "p99": 9.467289334861563,
+     "max": 11.13430003169924
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 3.2212366333333518,
+     "compute": 0.4405785333333225,
+     "mem_cache": 0.32098753333333124
+    },
+    "max_ws_mb": 0.10546875,
+    "hidden": 96,
+    "pair_widths": [
+     16,
+     24,
+     32,
+     48
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 411177,
+     "pair_encoder": 50184,
+     "imu_encoder": 73616,
+     "measure": 18435,
+     "inp": 36864,
+     "cells": 198144,
+     "gain_head": 8581,
+     "residual_head": 8451,
+     "bias_head": 8451,
+     "logvar_head": 8451
+    },
+    "macs": {
+     "total": 2440320.0,
+     "pair_encoder": 1271808.0,
+     "imu_encoder": 883200.0,
+     "measure": 18304.0,
+     "inp": 36736.0,
+     "cells": 196608.0,
+     "gain_head": 8512.0,
+     "residual_head": 8384.0,
+     "bias_head": 8384.0,
+     "logvar_head": 8384.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 3.5035206253682687,
+     "p50": 3.092124534305185,
+     "p95": 5.704318050993603,
+     "p99": 7.342787536326798,
+     "max": 10.861658025532961
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 3.1139494000000156,
+     "compute": 0.3790469000000032,
+     "mem_cache": 0.4380040999999856
+    },
+    "max_ws_mb": 0.1875,
+    "hidden": 128,
+    "pair_widths": [
+     16,
+     24,
+     32,
+     48
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 853289,
+     "pair_encoder": 68680,
+     "imu_encoder": 144656,
+     "measure": 39939,
+     "inp": 79872,
+     "cells": 444672,
+     "gain_head": 19013,
+     "residual_head": 18819,
+     "bias_head": 18819,
+     "logvar_head": 18819
+    },
+    "macs": {
+     "total": 3516864.0,
+     "pair_encoder": 1290240.0,
+     "imu_encoder": 1589760.0,
+     "measure": 39744.0,
+     "inp": 79680.0,
+     "cells": 442368.0,
+     "gain_head": 18912.0,
+     "residual_head": 18720.0,
+     "bias_head": 18720.0,
+     "logvar_head": 18720.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 4.129805498946966,
+     "p50": 3.6582875181920826,
+     "p95": 7.260968862101434,
+     "p99": 11.524008651031183,
+     "max": 17.953714006580412
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 3.0280218999999766,
+     "compute": 0.3581036666666573,
+     "mem_cache": 0.756354000000013
+    },
+    "max_ws_mb": 0.421875,
+    "hidden": 192,
+    "pair_widths": [
+     16,
+     24,
+     32,
+     48
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 1459241,
+     "pair_encoder": 87176,
+     "imu_encoder": 240272,
+     "measure": 69635,
+     "inp": 139264,
+     "cells": 789504,
+     "gain_head": 33541,
+     "residual_head": 33283,
+     "bias_head": 33283,
+     "logvar_head": 33283
+    },
+    "macs": {
+     "total": 4978432.0,
+     "pair_encoder": 1308672.0,
+     "imu_encoder": 2542080.0,
+     "measure": 69376.0,
+     "inp": 139008.0,
+     "cells": 786432.0,
+     "gain_head": 33408.0,
+     "residual_head": 33152.0,
+     "bias_head": 33152.0,
+     "logvar_head": 33152.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 4.529052598147907,
+     "p50": 4.181643016636372,
+     "p95": 7.768585701705887,
+     "p99": 9.858036311343314,
+     "max": 13.694848050363362
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 3.033873866666679,
+     "compute": 0.4047905666666745,
+     "mem_cache": 0.270168800000013,
+     "mem_dram": 0.7484375999999777
+    },
+    "max_ws_mb": 0.75,
+    "hidden": 256,
+    "pair_widths": [
+     16,
+     24,
+     32,
+     48
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 3162665,
+     "pair_encoder": 124168,
+     "imu_encoder": 505232,
+     "measure": 153603,
+     "inp": 307200,
+     "cells": 1774080,
+     "gain_head": 74885,
+     "residual_head": 74499,
+     "bias_head": 74499,
+     "logvar_head": 74499
+    },
+    "macs": {
+     "total": 9056640.0,
+     "pair_encoder": 1345536.0,
+     "imu_encoder": 5184000.0,
+     "measure": 153216.0,
+     "inp": 306816.0,
+     "cells": 1769472.0,
+     "gain_head": 74688.0,
+     "residual_head": 74304.0,
+     "bias_head": 74304.0,
+     "logvar_head": 74304.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 5.535772537537427,
+     "p50": 5.137800006195903,
+     "p95": 8.659963385434816,
+     "p99": 10.267455379944296,
+     "max": 25.14331799466163
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 3.0200611333333436,
+     "compute": 0.342496800000018,
+     "mem_cache": 0.262342966666675,
+     "mem_dram": 1.8040175333332837
+    },
+    "max_ws_mb": 1.6875,
+    "hidden": 384,
+    "pair_widths": [
+     16,
+     24,
+     32,
+     48
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 5521449,
+     "pair_encoder": 161160,
+     "imu_encoder": 868496,
+     "measure": 270339,
+     "inp": 540672,
+     "cells": 3151872,
+     "gain_head": 132613,
+     "residual_head": 132099,
+     "bias_head": 132099,
+     "logvar_head": 132099
+    },
+    "macs": {
+     "total": 14674944.0,
+     "pair_encoder": 1382400.0,
+     "imu_encoder": 8808960.0,
+     "measure": 269824.0,
+     "inp": 540160.0,
+     "cells": 3145728.0,
+     "gain_head": 132352.0,
+     "residual_head": 131840.0,
+     "bias_head": 131840.0,
+     "logvar_head": 131840.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 9.276288973739032,
+     "p50": 9.0322180185467,
+     "p95": 12.707091961055994,
+     "p99": 16.0336625110358,
+     "max": 24.1932759527117
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 3.9914410333334223,
+     "compute": 0.43013376666665276,
+     "mem_dram": 3.6670663333332914,
+     "mem_cache": 0.36217806666665997
+    },
+    "max_ws_mb": 3.0,
+    "hidden": 512,
+    "pair_widths": [
+     16,
+     24,
+     32,
+     48
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 66681,
+     "pair_encoder": 33912,
+     "imu_encoder": 13136,
+     "measure": 1539,
+     "inp": 3072,
+     "cells": 12672,
+     "gain_head": 613,
+     "residual_head": 579,
+     "bias_head": 579,
+     "logvar_head": 579
+    },
+    "macs": {
+     "total": 2611872.0,
+     "pair_encoder": 2308608.0,
+     "imu_encoder": 284160.0,
+     "measure": 1504.0,
+     "inp": 3040.0,
+     "cells": 12288.0,
+     "gain_head": 592.0,
+     "residual_head": 560.0,
+     "bias_head": 560.0,
+     "logvar_head": 560.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 3.133876334388994,
+     "p50": 2.851135504897684,
+     "p95": 5.270801216829567,
+     "p99": 6.405040392419324,
+     "max": 7.805658038705587
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 2.872820033333282,
+     "compute": 0.33945173333333506
+    },
+    "max_ws_mb": 0.03515625,
+    "hidden": 32,
+    "pair_widths": [
+     24,
+     32,
+     48,
+     64
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 144377,
+     "pair_encoder": 43160,
+     "imu_encoder": 27152,
+     "measure": 5123,
+     "inp": 10240,
+     "cells": 49920,
+     "gain_head": 2245,
+     "residual_head": 2179,
+     "bias_head": 2179,
+     "logvar_head": 2179
+    },
+    "macs": {
+     "total": 2813248.0,
+     "pair_encoder": 2317824.0,
+     "imu_encoder": 422400.0,
+     "measure": 5056.0,
+     "inp": 10176.0,
+     "cells": 49152.0,
+     "gain_head": 2208.0,
+     "residual_head": 2144.0,
+     "bias_head": 2144.0,
+     "logvar_head": 2144.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 2.9369811712637204,
+     "p50": 2.5818119756877422,
+     "p95": 4.864275438012554,
+     "p99": 5.765330850845204,
+     "max": 7.327660918235779
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 3.163774866666643,
+     "compute": 0.38692863333333316,
+     "mem_cache": 0.03811143333333333
+    },
+    "max_ws_mb": 0.0703125,
+    "hidden": 64,
+    "pair_widths": [
+     24,
+     32,
+     48,
+     64
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 263033,
+     "pair_encoder": 52408,
+     "imu_encoder": 47312,
+     "measure": 10755,
+     "inp": 21504,
+     "cells": 111744,
+     "gain_head": 4901,
+     "residual_head": 4803,
+     "bias_head": 4803,
+     "logvar_head": 4803
+    },
+    "macs": {
+     "total": 3110880.0,
+     "pair_encoder": 2327040.0,
+     "imu_encoder": 622080.0,
+     "measure": 10656.0,
+     "inp": 21408.0,
+     "cells": 110592.0,
+     "gain_head": 4848.0,
+     "residual_head": 4752.0,
+     "bias_head": 4752.0,
+     "logvar_head": 4752.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 3.962614980462769,
+     "p50": 3.5078924847766757,
+     "p95": 6.994691374711687,
+     "p99": 9.442342094844207,
+     "max": 10.21033909637481
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 2.6952667333333378,
+     "compute": 0.337610633333325,
+     "mem_cache": 0.3082791333333366
+    },
+    "max_ws_mb": 0.10546875,
+    "hidden": 96,
+    "pair_widths": [
+     24,
+     32,
+     48,
+     64
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 422649,
+     "pair_encoder": 61656,
+     "imu_encoder": 73616,
+     "measure": 18435,
+     "inp": 36864,
+     "cells": 198144,
+     "gain_head": 8581,
+     "residual_head": 8451,
+     "bias_head": 8451,
+     "logvar_head": 8451
+    },
+    "macs": {
+     "total": 3504768.0,
+     "pair_encoder": 2336256.0,
+     "imu_encoder": 883200.0,
+     "measure": 18304.0,
+     "inp": 36736.0,
+     "cells": 196608.0,
+     "gain_head": 8512.0,
+     "residual_head": 8384.0,
+     "bias_head": 8384.0,
+     "logvar_head": 8384.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 3.697591034737839,
+     "p50": 3.303350997157395,
+     "p95": 5.906521232100201,
+     "p99": 7.916332072345541,
+     "max": 8.268036996014416
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 37.59704530000075,
+     "compute": 5.109170999999861,
+     "mem_cache": 6.472291433333423
+    },
+    "max_ws_mb": 0.1875,
+    "hidden": 128,
+    "pair_widths": [
+     24,
+     32,
+     48,
+     64
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 864761,
+     "pair_encoder": 80152,
+     "imu_encoder": 144656,
+     "measure": 39939,
+     "inp": 79872,
+     "cells": 444672,
+     "gain_head": 19013,
+     "residual_head": 18819,
+     "bias_head": 18819,
+     "logvar_head": 18819
+    },
+    "macs": {
+     "total": 4581312.0,
+     "pair_encoder": 2354688.0,
+     "imu_encoder": 1589760.0,
+     "measure": 39744.0,
+     "inp": 79680.0,
+     "cells": 442368.0,
+     "gain_head": 18912.0,
+     "residual_head": 18720.0,
+     "bias_head": 18720.0,
+     "logvar_head": 18720.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 3.8196368079463188,
+     "p50": 3.355773980729282,
+     "p95": 6.428382493322714,
+     "p99": 8.390710444655271,
+     "max": 9.359413990750909
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 2.7108793666666524,
+     "compute": 0.3740372333333099,
+     "mem_cache": 0.6755245333333412
+    },
+    "max_ws_mb": 0.421875,
+    "hidden": 192,
+    "pair_widths": [
+     24,
+     32,
+     48,
+     64
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 1470713,
+     "pair_encoder": 98648,
+     "imu_encoder": 240272,
+     "measure": 69635,
+     "inp": 139264,
+     "cells": 789504,
+     "gain_head": 33541,
+     "residual_head": 33283,
+     "bias_head": 33283,
+     "logvar_head": 33283
+    },
+    "macs": {
+     "total": 6042880.0,
+     "pair_encoder": 2373120.0,
+     "imu_encoder": 2542080.0,
+     "measure": 69376.0,
+     "inp": 139008.0,
+     "cells": 786432.0,
+     "gain_head": 33408.0,
+     "residual_head": 33152.0,
+     "bias_head": 33152.0,
+     "logvar_head": 33152.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 4.62738914700987,
+     "p50": 4.124753526411951,
+     "p95": 8.4163318038918,
+     "p99": 11.003379924222827,
+     "max": 12.462275917641819
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 2.8502045333333466,
+     "compute": 0.373244033333324,
+     "mem_cache": 0.23944750000000423,
+     "mem_dram": 0.7394327333333254
+    },
+    "max_ws_mb": 0.75,
+    "hidden": 256,
+    "pair_widths": [
+     24,
+     32,
+     48,
+     64
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 3174137,
+     "pair_encoder": 135640,
+     "imu_encoder": 505232,
+     "measure": 153603,
+     "inp": 307200,
+     "cells": 1774080,
+     "gain_head": 74885,
+     "residual_head": 74499,
+     "bias_head": 74499,
+     "logvar_head": 74499
+    },
+    "macs": {
+     "total": 10121088.0,
+     "pair_encoder": 2409984.0,
+     "imu_encoder": 5184000.0,
+     "measure": 153216.0,
+     "inp": 306816.0,
+     "cells": 1769472.0,
+     "gain_head": 74688.0,
+     "residual_head": 74304.0,
+     "bias_head": 74304.0,
+     "logvar_head": 74304.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 6.747804087883031,
+     "p50": 6.403599574696273,
+     "p95": 10.010520659852773,
+     "p99": 12.836779725039378,
+     "max": 27.557061053812504
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 3.2792969999999695,
+     "compute": 0.43966326666665895,
+     "mem_cache": 0.2638857666666733,
+     "mem_dram": 2.033867266666665
+    },
+    "max_ws_mb": 1.6875,
+    "hidden": 384,
+    "pair_widths": [
+     24,
+     32,
+     48,
+     64
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 5532921,
+     "pair_encoder": 172632,
+     "imu_encoder": 868496,
+     "measure": 270339,
+     "inp": 540672,
+     "cells": 3151872,
+     "gain_head": 132613,
+     "residual_head": 132099,
+     "bias_head": 132099,
+     "logvar_head": 132099
+    },
+    "macs": {
+     "total": 15739392.0,
+     "pair_encoder": 2446848.0,
+     "imu_encoder": 8808960.0,
+     "measure": 269824.0,
+     "inp": 540160.0,
+     "cells": 3145728.0,
+     "gain_head": 132352.0,
+     "residual_head": 131840.0,
+     "bias_head": 131840.0,
+     "logvar_head": 131840.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 9.192256707782773,
+     "p50": 8.798662456683815,
+     "p95": 12.766544451005748,
+     "p99": 14.861319380579518,
+     "max": 15.754136024042964
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 4.141726666666778,
+     "compute": 0.5222456333333121,
+     "mem_dram": 3.8766241666666366,
+     "mem_cache": 0.3062385999999995
+    },
+    "max_ws_mb": 3.0,
+    "hidden": 512,
+    "pair_widths": [
+     24,
+     32,
+     48,
+     64
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 89105,
+     "pair_encoder": 56336,
+     "imu_encoder": 13136,
+     "measure": 1539,
+     "inp": 3072,
+     "cells": 12672,
+     "gain_head": 613,
+     "residual_head": 579,
+     "bias_head": 579,
+     "logvar_head": 579
+    },
+    "macs": {
+     "total": 4579488.0,
+     "pair_encoder": 4276224.0,
+     "imu_encoder": 284160.0,
+     "measure": 1504.0,
+     "inp": 3040.0,
+     "cells": 12288.0,
+     "gain_head": 592.0,
+     "residual_head": 560.0,
+     "bias_head": 560.0,
+     "logvar_head": 560.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 3.5212265634485944,
+     "p50": 3.1671689939685166,
+     "p95": 6.086934625636783,
+     "p99": 7.355813703034073,
+     "max": 9.218252031132579
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 4.175882000000037,
+     "compute": 0.46626429999997954,
+     "mem_cache": 0.0027486333333356016
+    },
+    "max_ws_mb": 0.0703125,
+    "hidden": 32,
+    "pair_widths": [
+     32,
+     48,
+     64,
+     96
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 166801,
+     "pair_encoder": 65584,
+     "imu_encoder": 27152,
+     "measure": 5123,
+     "inp": 10240,
+     "cells": 49920,
+     "gain_head": 2245,
+     "residual_head": 2179,
+     "bias_head": 2179,
+     "logvar_head": 2179
+    },
+    "macs": {
+     "total": 4780864.0,
+     "pair_encoder": 4285440.0,
+     "imu_encoder": 422400.0,
+     "measure": 5056.0,
+     "inp": 10176.0,
+     "cells": 49152.0,
+     "gain_head": 2208.0,
+     "residual_head": 2144.0,
+     "bias_head": 2144.0,
+     "logvar_head": 2144.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 3.421202282929285,
+     "p50": 2.966473053675145,
+     "p95": 6.2090470688417545,
+     "p99": 7.45685110683553,
+     "max": 7.852838956750929
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 3.790196133333308,
+     "compute": 0.5489766666666499,
+     "mem_cache": 0.04906096666667025
+    },
+    "max_ws_mb": 0.0703125,
+    "hidden": 64,
+    "pair_widths": [
+     32,
+     48,
+     64,
+     96
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 285457,
+     "pair_encoder": 74832,
+     "imu_encoder": 47312,
+     "measure": 10755,
+     "inp": 21504,
+     "cells": 111744,
+     "gain_head": 4901,
+     "residual_head": 4803,
+     "bias_head": 4803,
+     "logvar_head": 4803
+    },
+    "macs": {
+     "total": 5078496.0,
+     "pair_encoder": 4294656.0,
+     "imu_encoder": 622080.0,
+     "measure": 10656.0,
+     "inp": 21408.0,
+     "cells": 110592.0,
+     "gain_head": 4848.0,
+     "residual_head": 4752.0,
+     "bias_head": 4752.0,
+     "logvar_head": 4752.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 3.685096560300074,
+     "p50": 3.275779483374208,
+     "p95": 6.801932363305239,
+     "p99": 9.081561331404373,
+     "max": 11.50066894479096
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 3.2566008333332808,
+     "compute": 0.48816870000002266,
+     "mem_cache": 0.3507082333333382
+    },
+    "max_ws_mb": 0.10546875,
+    "hidden": 96,
+    "pair_widths": [
+     32,
+     48,
+     64,
+     96
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 445073,
+     "pair_encoder": 84080,
+     "imu_encoder": 73616,
+     "measure": 18435,
+     "inp": 36864,
+     "cells": 198144,
+     "gain_head": 8581,
+     "residual_head": 8451,
+     "bias_head": 8451,
+     "logvar_head": 8451
+    },
+    "macs": {
+     "total": 5472384.0,
+     "pair_encoder": 4303872.0,
+     "imu_encoder": 883200.0,
+     "measure": 18304.0,
+     "inp": 36736.0,
+     "cells": 196608.0,
+     "gain_head": 8512.0,
+     "residual_head": 8384.0,
+     "bias_head": 8384.0,
+     "logvar_head": 8384.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 3.648786996067925,
+     "p50": 3.2113755587488413,
+     "p95": 6.631914136232808,
+     "p99": 7.304287089500576,
+     "max": 9.02243098244071
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 3.297025999999962,
+     "compute": 0.5048807333333415,
+     "mem_cache": 0.4468881666666881
+    },
+    "max_ws_mb": 0.1875,
+    "hidden": 128,
+    "pair_widths": [
+     32,
+     48,
+     64,
+     96
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 887185,
+     "pair_encoder": 102576,
+     "imu_encoder": 144656,
+     "measure": 39939,
+     "inp": 79872,
+     "cells": 444672,
+     "gain_head": 19013,
+     "residual_head": 18819,
+     "bias_head": 18819,
+     "logvar_head": 18819
+    },
+    "macs": {
+     "total": 6548928.0,
+     "pair_encoder": 4322304.0,
+     "imu_encoder": 1589760.0,
+     "measure": 39744.0,
+     "inp": 79680.0,
+     "cells": 442368.0,
+     "gain_head": 18912.0,
+     "residual_head": 18720.0,
+     "bias_head": 18720.0,
+     "logvar_head": 18720.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 4.9537520300046625,
+     "p50": 4.5019249664619565,
+     "p95": 9.052389074349774,
+     "p99": 10.711235019844025,
+     "max": 13.445315998978913
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 3.0175312666666865,
+     "compute": 0.5094326999999956,
+     "mem_cache": 0.7238334999999638
+    },
+    "max_ws_mb": 0.421875,
+    "hidden": 192,
+    "pair_widths": [
+     32,
+     48,
+     64,
+     96
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 1493137,
+     "pair_encoder": 121072,
+     "imu_encoder": 240272,
+     "measure": 69635,
+     "inp": 139264,
+     "cells": 789504,
+     "gain_head": 33541,
+     "residual_head": 33283,
+     "bias_head": 33283,
+     "logvar_head": 33283
+    },
+    "macs": {
+     "total": 8010496.0,
+     "pair_encoder": 4340736.0,
+     "imu_encoder": 2542080.0,
+     "measure": 69376.0,
+     "inp": 139008.0,
+     "cells": 786432.0,
+     "gain_head": 33408.0,
+     "residual_head": 33152.0,
+     "bias_head": 33152.0,
+     "logvar_head": 33152.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 4.448045711879703,
+     "p50": 4.157935036346316,
+     "p95": 6.903522950597106,
+     "p99": 8.099371065618472,
+     "max": 8.724223007448018
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 3.3401833666666203,
+     "compute": 0.504319066666677,
+     "mem_cache": 0.25707516666665486,
+     "mem_dram": 0.9743587666666634
+    },
+    "max_ws_mb": 0.75,
+    "hidden": 256,
+    "pair_widths": [
+     32,
+     48,
+     64,
+     96
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 3196561,
+     "pair_encoder": 158064,
+     "imu_encoder": 505232,
+     "measure": 153603,
+     "inp": 307200,
+     "cells": 1774080,
+     "gain_head": 74885,
+     "residual_head": 74499,
+     "bias_head": 74499,
+     "logvar_head": 74499
+    },
+    "macs": {
+     "total": 12088704.0,
+     "pair_encoder": 4377600.0,
+     "imu_encoder": 5184000.0,
+     "measure": 153216.0,
+     "inp": 306816.0,
+     "cells": 1769472.0,
+     "gain_head": 74688.0,
+     "residual_head": 74304.0,
+     "bias_head": 74304.0,
+     "logvar_head": 74304.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 5.981136711356654,
+     "p50": 5.518618039786816,
+     "p95": 9.14438960026018,
+     "p99": 10.71994496509433,
+     "max": 11.74472295679152
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 4.193446166666651,
+     "compute": 0.6489706000000335,
+     "mem_cache": 0.276333133333319,
+     "mem_dram": 2.100572899999993
+    },
+    "max_ws_mb": 1.6875,
+    "hidden": 384,
+    "pair_widths": [
+     32,
+     48,
+     64,
+     96
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 5555345,
+     "pair_encoder": 195056,
+     "imu_encoder": 868496,
+     "measure": 270339,
+     "inp": 540672,
+     "cells": 3151872,
+     "gain_head": 132613,
+     "residual_head": 132099,
+     "bias_head": 132099,
+     "logvar_head": 132099
+    },
+    "macs": {
+     "total": 17707008.0,
+     "pair_encoder": 4414464.0,
+     "imu_encoder": 8808960.0,
+     "measure": 269824.0,
+     "inp": 540160.0,
+     "cells": 3145728.0,
+     "gain_head": 132352.0,
+     "residual_head": 131840.0,
+     "bias_head": 131840.0,
+     "logvar_head": 131840.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 9.610218384874646,
+     "p50": 9.384654520545155,
+     "p95": 13.380343822063875,
+     "p99": 15.302769786212597,
+     "max": 18.183659994974732
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 4.069302300000022,
+     "compute": 0.5560146333333302,
+     "mem_cache": 0.32215363333334024,
+     "mem_dram": 3.9417111999999492
+    },
+    "max_ws_mb": 3.0,
+    "hidden": 512,
+    "pair_widths": [
+     32,
+     48,
+     64,
+     96
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 132785,
+     "pair_encoder": 100016,
+     "imu_encoder": 13136,
+     "measure": 1539,
+     "inp": 3072,
+     "cells": 12672,
+     "gain_head": 613,
+     "residual_head": 579,
+     "bias_head": 579,
+     "logvar_head": 579
+    },
+    "macs": {
+     "total": 8505504.0,
+     "pair_encoder": 8202240.0,
+     "imu_encoder": 284160.0,
+     "measure": 1504.0,
+     "inp": 3040.0,
+     "cells": 12288.0,
+     "gain_head": 592.0,
+     "residual_head": 560.0,
+     "bias_head": 560.0,
+     "logvar_head": 560.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 2.908508429854092,
+     "p50": 2.47836799826473,
+     "p95": 5.016702075954525,
+     "p99": 6.849069553427398,
+     "max": 7.457857020199299
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 3.190043766666577,
+     "compute": 0.5931479666666956,
+     "mem_cache": 0.09180740000000337
+    },
+    "max_ws_mb": 0.140625,
+    "hidden": 32,
+    "pair_widths": [
+     48,
+     64,
+     96,
+     128
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 210481,
+     "pair_encoder": 109264,
+     "imu_encoder": 27152,
+     "measure": 5123,
+     "inp": 10240,
+     "cells": 49920,
+     "gain_head": 2245,
+     "residual_head": 2179,
+     "bias_head": 2179,
+     "logvar_head": 2179
+    },
+    "macs": {
+     "total": 8706880.0,
+     "pair_encoder": 8211456.0,
+     "imu_encoder": 422400.0,
+     "measure": 5056.0,
+     "inp": 10176.0,
+     "cells": 49152.0,
+     "gain_head": 2208.0,
+     "residual_head": 2144.0,
+     "bias_head": 2144.0,
+     "logvar_head": 2144.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 3.98388876135207,
+     "p50": 3.701869514770806,
+     "p95": 6.127839512191707,
+     "p99": 10.088086387841033,
+     "max": 12.381871929392219
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 3.231716066666709,
+     "compute": 0.6416555333333391,
+     "mem_cache": 0.2006386999999971
+    },
+    "max_ws_mb": 0.140625,
+    "hidden": 64,
+    "pair_widths": [
+     48,
+     64,
+     96,
+     128
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 329137,
+     "pair_encoder": 118512,
+     "imu_encoder": 47312,
+     "measure": 10755,
+     "inp": 21504,
+     "cells": 111744,
+     "gain_head": 4901,
+     "residual_head": 4803,
+     "bias_head": 4803,
+     "logvar_head": 4803
+    },
+    "macs": {
+     "total": 9004512.0,
+     "pair_encoder": 8220672.0,
+     "imu_encoder": 622080.0,
+     "measure": 10656.0,
+     "inp": 21408.0,
+     "cells": 110592.0,
+     "gain_head": 4848.0,
+     "residual_head": 4752.0,
+     "bias_head": 4752.0,
+     "logvar_head": 4752.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 3.902891180901365,
+     "p50": 3.3982369932346046,
+     "p95": 6.351858074776826,
+     "p99": 8.412855449132623,
+     "max": 13.213502941653132
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 3.4792161333333076,
+     "compute": 0.7243421333333505,
+     "mem_cache": 0.458512399999992
+    },
+    "max_ws_mb": 0.140625,
+    "hidden": 96,
+    "pair_widths": [
+     48,
+     64,
+     96,
+     128
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 488753,
+     "pair_encoder": 127760,
+     "imu_encoder": 73616,
+     "measure": 18435,
+     "inp": 36864,
+     "cells": 198144,
+     "gain_head": 8581,
+     "residual_head": 8451,
+     "bias_head": 8451,
+     "logvar_head": 8451
+    },
+    "macs": {
+     "total": 9398400.0,
+     "pair_encoder": 8229888.0,
+     "imu_encoder": 883200.0,
+     "measure": 18304.0,
+     "inp": 36736.0,
+     "cells": 196608.0,
+     "gain_head": 8512.0,
+     "residual_head": 8384.0,
+     "bias_head": 8384.0,
+     "logvar_head": 8384.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 3.9516573322047903,
+     "p50": 3.605586534831673,
+     "p95": 6.080703117186204,
+     "p99": 7.421883734641598,
+     "max": 9.03375493362546
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 3.261912433333319,
+     "compute": 0.7048795333333479,
+     "mem_cache": 0.6776693333333588
+    },
+    "max_ws_mb": 0.1875,
+    "hidden": 128,
+    "pair_widths": [
+     48,
+     64,
+     96,
+     128
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 930865,
+     "pair_encoder": 146256,
+     "imu_encoder": 144656,
+     "measure": 39939,
+     "inp": 79872,
+     "cells": 444672,
+     "gain_head": 19013,
+     "residual_head": 18819,
+     "bias_head": 18819,
+     "logvar_head": 18819
+    },
+    "macs": {
+     "total": 10474944.0,
+     "pair_encoder": 8248320.0,
+     "imu_encoder": 1589760.0,
+     "measure": 39744.0,
+     "inp": 79680.0,
+     "cells": 442368.0,
+     "gain_head": 18912.0,
+     "residual_head": 18720.0,
+     "bias_head": 18720.0,
+     "logvar_head": 18720.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 4.629395401570946,
+     "p50": 4.186528502032161,
+     "p95": 7.7342421165667465,
+     "p99": 9.526585426647218,
+     "max": 11.413402040489018
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 3.1142685999999533,
+     "compute": 0.6617651333333401,
+     "mem_cache": 0.9218192666667121
+    },
+    "max_ws_mb": 0.421875,
+    "hidden": 192,
+    "pair_widths": [
+     48,
+     64,
+     96,
+     128
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 1536817,
+     "pair_encoder": 164752,
+     "imu_encoder": 240272,
+     "measure": 69635,
+     "inp": 139264,
+     "cells": 789504,
+     "gain_head": 33541,
+     "residual_head": 33283,
+     "bias_head": 33283,
+     "logvar_head": 33283
+    },
+    "macs": {
+     "total": 11936512.0,
+     "pair_encoder": 8266752.0,
+     "imu_encoder": 2542080.0,
+     "measure": 69376.0,
+     "inp": 139008.0,
+     "cells": 786432.0,
+     "gain_head": 33408.0,
+     "residual_head": 33152.0,
+     "bias_head": 33152.0,
+     "logvar_head": 33152.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 5.003187469397248,
+     "p50": 4.64114552596584,
+     "p95": 7.822465564822777,
+     "p99": 10.090049582067879,
+     "max": 13.84587399661541
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 3.4737070000000037,
+     "compute": 0.7938090666666711,
+     "mem_cache": 0.46571466666665084,
+     "mem_dram": 0.9161575666666705
+    },
+    "max_ws_mb": 0.75,
+    "hidden": 256,
+    "pair_widths": [
+     48,
+     64,
+     96,
+     128
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 3240241,
+     "pair_encoder": 201744,
+     "imu_encoder": 505232,
+     "measure": 153603,
+     "inp": 307200,
+     "cells": 1774080,
+     "gain_head": 74885,
+     "residual_head": 74499,
+     "bias_head": 74499,
+     "logvar_head": 74499
+    },
+    "macs": {
+     "total": 16014720.0,
+     "pair_encoder": 8303616.0,
+     "imu_encoder": 5184000.0,
+     "measure": 153216.0,
+     "inp": 306816.0,
+     "cells": 1769472.0,
+     "gain_head": 74688.0,
+     "residual_head": 74304.0,
+     "bias_head": 74304.0,
+     "logvar_head": 74304.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 7.290113609368828,
+     "p50": 6.736501003615558,
+     "p95": 11.721172765828664,
+     "p99": 17.578624326270074,
+     "max": 32.44066203478724
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 3.351939000000016,
+     "compute": 0.6877202333333781,
+     "mem_cache": 0.3923026333333143,
+     "mem_dram": 1.9294761999999488
+    },
+    "max_ws_mb": 1.6875,
+    "hidden": 384,
+    "pair_widths": [
+     48,
+     64,
+     96,
+     128
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 5599025,
+     "pair_encoder": 238736,
+     "imu_encoder": 868496,
+     "measure": 270339,
+     "inp": 540672,
+     "cells": 3151872,
+     "gain_head": 132613,
+     "residual_head": 132099,
+     "bias_head": 132099,
+     "logvar_head": 132099
+    },
+    "macs": {
+     "total": 21633024.0,
+     "pair_encoder": 8340480.0,
+     "imu_encoder": 8808960.0,
+     "measure": 269824.0,
+     "inp": 540160.0,
+     "cells": 3145728.0,
+     "gain_head": 132352.0,
+     "residual_head": 131840.0,
+     "bias_head": 131840.0,
+     "logvar_head": 131840.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 9.943319962423464,
+     "p50": 9.598957491107285,
+     "p95": 13.620338053442538,
+     "p99": 18.3061428705696,
+     "max": 22.860905970446765
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1431.0,
+    "class_ms": {
+     "small": 4.175569099999965,
+     "compute": 0.8048487333333795,
+     "mem_cache": 0.4896232000000399,
+     "mem_dram": 3.5647661666665753
+    },
+    "max_ws_mb": 3.0,
+    "hidden": 512,
+    "pair_widths": [
+     48,
+     64,
+     96,
+     128
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 219105,
+     "pair_encoder": 186336,
+     "imu_encoder": 13136,
+     "measure": 1539,
+     "inp": 3072,
+     "cells": 12672,
+     "gain_head": 613,
+     "residual_head": 579,
+     "bias_head": 579,
+     "logvar_head": 579
+    },
+    "macs": {
+     "total": 16034976.0,
+     "pair_encoder": 15731712.0,
+     "imu_encoder": 284160.0,
+     "measure": 1504.0,
+     "inp": 3040.0,
+     "cells": 12288.0,
+     "gain_head": 592.0,
+     "residual_head": 560.0,
+     "bias_head": 560.0,
+     "logvar_head": 560.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 4.738510465143587,
+     "p50": 4.300118482206017,
+     "p95": 7.3956903826911,
+     "p99": 9.689641181612387,
+     "max": 17.20606896560639
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1426.0,
+    "class_ms": {
+     "small": 2.9175855999999594,
+     "compute": 0.9214601000000153,
+     "mem_cache": 0.20185663333333864
+    },
+    "max_ws_mb": 0.28125,
+    "hidden": 32,
+    "pair_widths": [
+     64,
+     96,
+     128,
+     192
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 296801,
+     "pair_encoder": 195584,
+     "imu_encoder": 27152,
+     "measure": 5123,
+     "inp": 10240,
+     "cells": 49920,
+     "gain_head": 2245,
+     "residual_head": 2179,
+     "bias_head": 2179,
+     "logvar_head": 2179
+    },
+    "macs": {
+     "total": 16236352.0,
+     "pair_encoder": 15740928.0,
+     "imu_encoder": 422400.0,
+     "measure": 5056.0,
+     "inp": 10176.0,
+     "cells": 49152.0,
+     "gain_head": 2208.0,
+     "residual_head": 2144.0,
+     "bias_head": 2144.0,
+     "logvar_head": 2144.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 5.492256664332341,
+     "p50": 5.0517445197328925,
+     "p95": 9.482164465589449,
+     "p99": 11.600358918076381,
+     "max": 14.290802995674312
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1426.0,
+    "class_ms": {
+     "small": 2.988414466666685,
+     "compute": 0.9454674666666695,
+     "mem_cache": 0.22934430000000036
+    },
+    "max_ws_mb": 0.28125,
+    "hidden": 64,
+    "pair_widths": [
+     64,
+     96,
+     128,
+     192
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 415457,
+     "pair_encoder": 204832,
+     "imu_encoder": 47312,
+     "measure": 10755,
+     "inp": 21504,
+     "cells": 111744,
+     "gain_head": 4901,
+     "residual_head": 4803,
+     "bias_head": 4803,
+     "logvar_head": 4803
+    },
+    "macs": {
+     "total": 16533984.0,
+     "pair_encoder": 15750144.0,
+     "imu_encoder": 622080.0,
+     "measure": 10656.0,
+     "inp": 21408.0,
+     "cells": 110592.0,
+     "gain_head": 4848.0,
+     "residual_head": 4752.0,
+     "bias_head": 4752.0,
+     "logvar_head": 4752.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 4.910133880118585,
+     "p50": 4.608839459251612,
+     "p95": 8.184295217506586,
+     "p99": 10.194760172162207,
+     "max": 16.051409067586064
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1426.0,
+    "class_ms": {
+     "small": 2.9674074666667383,
+     "compute": 1.0396529333333302,
+     "mem_cache": 0.5515756666666747
+    },
+    "max_ws_mb": 0.28125,
+    "hidden": 96,
+    "pair_widths": [
+     64,
+     96,
+     128,
+     192
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 575073,
+     "pair_encoder": 214080,
+     "imu_encoder": 73616,
+     "measure": 18435,
+     "inp": 36864,
+     "cells": 198144,
+     "gain_head": 8581,
+     "residual_head": 8451,
+     "bias_head": 8451,
+     "logvar_head": 8451
+    },
+    "macs": {
+     "total": 16927872.0,
+     "pair_encoder": 15759360.0,
+     "imu_encoder": 883200.0,
+     "measure": 18304.0,
+     "inp": 36736.0,
+     "cells": 196608.0,
+     "gain_head": 8512.0,
+     "residual_head": 8384.0,
+     "bias_head": 8384.0,
+     "logvar_head": 8384.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 4.8084224653641945,
+     "p50": 4.386829445138574,
+     "p95": 7.906215894035991,
+     "p99": 9.57157119526528,
+     "max": 12.526944046840072
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1426.0,
+    "class_ms": {
+     "small": 2.6522124333333723,
+     "compute": 0.9714216666666495,
+     "mem_cache": 0.615721933333344
+    },
+    "max_ws_mb": 0.28125,
+    "hidden": 128,
+    "pair_widths": [
+     64,
+     96,
+     128,
+     192
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 1017185,
+     "pair_encoder": 232576,
+     "imu_encoder": 144656,
+     "measure": 39939,
+     "inp": 79872,
+     "cells": 444672,
+     "gain_head": 19013,
+     "residual_head": 18819,
+     "bias_head": 18819,
+     "logvar_head": 18819
+    },
+    "macs": {
+     "total": 18004416.0,
+     "pair_encoder": 15777792.0,
+     "imu_encoder": 1589760.0,
+     "measure": 39744.0,
+     "inp": 79680.0,
+     "cells": 442368.0,
+     "gain_head": 18912.0,
+     "residual_head": 18720.0,
+     "bias_head": 18720.0,
+     "logvar_head": 18720.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 5.421325980304656,
+     "p50": 5.098443478345871,
+     "p95": 8.192101551685482,
+     "p99": 10.463341970462352,
+     "max": 16.706997994333506
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1426.0,
+    "class_ms": {
+     "small": 2.8894986999999364,
+     "compute": 1.0605591333333486,
+     "mem_cache": 0.958383366666638
+    },
+    "max_ws_mb": 0.421875,
+    "hidden": 192,
+    "pair_widths": [
+     64,
+     96,
+     128,
+     192
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 1623137,
+     "pair_encoder": 251072,
+     "imu_encoder": 240272,
+     "measure": 69635,
+     "inp": 139264,
+     "cells": 789504,
+     "gain_head": 33541,
+     "residual_head": 33283,
+     "bias_head": 33283,
+     "logvar_head": 33283
+    },
+    "macs": {
+     "total": 19465984.0,
+     "pair_encoder": 15796224.0,
+     "imu_encoder": 2542080.0,
+     "measure": 69376.0,
+     "inp": 139008.0,
+     "cells": 786432.0,
+     "gain_head": 33408.0,
+     "residual_head": 33152.0,
+     "bias_head": 33152.0,
+     "logvar_head": 33152.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 5.977148238823495,
+     "p50": 5.650307983160019,
+     "p95": 8.966255071572958,
+     "p99": 11.17612274247222,
+     "max": 12.335357954725623
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1426.0,
+    "class_ms": {
+     "small": 3.555769766666622,
+     "compute": 1.170951666666688,
+     "mem_cache": 0.5409282999999724,
+     "mem_dram": 0.7883196999999821
+    },
+    "max_ws_mb": 0.75,
+    "hidden": 256,
+    "pair_widths": [
+     64,
+     96,
+     128,
+     192
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 3326561,
+     "pair_encoder": 288064,
+     "imu_encoder": 505232,
+     "measure": 153603,
+     "inp": 307200,
+     "cells": 1774080,
+     "gain_head": 74885,
+     "residual_head": 74499,
+     "bias_head": 74499,
+     "logvar_head": 74499
+    },
+    "macs": {
+     "total": 23544192.0,
+     "pair_encoder": 15833088.0,
+     "imu_encoder": 5184000.0,
+     "measure": 153216.0,
+     "inp": 306816.0,
+     "cells": 1769472.0,
+     "gain_head": 74688.0,
+     "residual_head": 74304.0,
+     "bias_head": 74304.0,
+     "logvar_head": 74304.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 7.44581247669306,
+     "p50": 6.92239502677694,
+     "p95": 11.792948964284722,
+     "p99": 14.200269022257999,
+     "max": 15.35092294216156
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1426.0,
+    "class_ms": {
+     "small": 3.055044666666695,
+     "compute": 1.0947842666666645,
+     "mem_cache": 0.47187703333333614,
+     "mem_dram": 1.922495633333369
+    },
+    "max_ws_mb": 1.6875,
+    "hidden": 384,
+    "pair_widths": [
+     64,
+     96,
+     128,
+     192
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 5685345,
+     "pair_encoder": 325056,
+     "imu_encoder": 868496,
+     "measure": 270339,
+     "inp": 540672,
+     "cells": 3151872,
+     "gain_head": 132613,
+     "residual_head": 132099,
+     "bias_head": 132099,
+     "logvar_head": 132099
+    },
+    "macs": {
+     "total": 29162496.0,
+     "pair_encoder": 15869952.0,
+     "imu_encoder": 8808960.0,
+     "measure": 269824.0,
+     "inp": 540160.0,
+     "cells": 3145728.0,
+     "gain_head": 132352.0,
+     "residual_head": 131840.0,
+     "bias_head": 131840.0,
+     "logvar_head": 131840.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 10.142620949243957,
+     "p50": 9.77338699158281,
+     "p95": 13.82142249494791,
+     "p99": 16.4454882289283,
+     "max": 19.023302011191845
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1426.0,
+    "class_ms": {
+     "small": 3.913758866666563,
+     "compute": 1.2268933333333327,
+     "mem_cache": 0.49351159999998306,
+     "mem_dram": 3.963075466666652
+    },
+    "max_ws_mb": 3.0,
+    "hidden": 512,
+    "pair_widths": [
+     64,
+     96,
+     128,
+     192
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 389409,
+     "pair_encoder": 356640,
+     "imu_encoder": 13136,
+     "measure": 1539,
+     "inp": 3072,
+     "cells": 12672,
+     "gain_head": 613,
+     "residual_head": 579,
+     "bias_head": 579,
+     "logvar_head": 579
+    },
+    "macs": {
+     "total": 31075488.0,
+     "pair_encoder": 30772224.0,
+     "imu_encoder": 284160.0,
+     "measure": 1504.0,
+     "inp": 3040.0,
+     "cells": 12288.0,
+     "gain_head": 592.0,
+     "residual_head": 560.0,
+     "bias_head": 560.0,
+     "logvar_head": 560.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 5.519115382445637,
+     "p50": 5.059829505626112,
+     "p95": 9.704576758667825,
+     "p99": 11.706948070786893,
+     "max": 21.652585011906922
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1421.0,
+    "class_ms": {
+     "small": 3.8884687000000757,
+     "compute": 1.662221099999998,
+     "mem_cache": 0.3593195666666618,
+     "mem_dram": 0.002676399999999043
+    },
+    "max_ws_mb": 0.5625,
+    "hidden": 32,
+    "pair_widths": [
+     96,
+     128,
+     192,
+     256
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 467105,
+     "pair_encoder": 365888,
+     "imu_encoder": 27152,
+     "measure": 5123,
+     "inp": 10240,
+     "cells": 49920,
+     "gain_head": 2245,
+     "residual_head": 2179,
+     "bias_head": 2179,
+     "logvar_head": 2179
+    },
+    "macs": {
+     "total": 31276864.0,
+     "pair_encoder": 30781440.0,
+     "imu_encoder": 422400.0,
+     "measure": 5056.0,
+     "inp": 10176.0,
+     "cells": 49152.0,
+     "gain_head": 2208.0,
+     "residual_head": 2144.0,
+     "bias_head": 2144.0,
+     "logvar_head": 2144.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 6.704606428022751,
+     "p50": 6.43227796535939,
+     "p95": 10.205244232201942,
+     "p99": 12.461440936895087,
+     "max": 14.398482977412641
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1421.0,
+    "class_ms": {
+     "small": 3.949190799999907,
+     "compute": 1.9566721333333144,
+     "mem_cache": 0.547059000000015,
+     "mem_dram": 0.0027405000000010364
+    },
+    "max_ws_mb": 0.5625,
+    "hidden": 64,
+    "pair_widths": [
+     96,
+     128,
+     192,
+     256
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 585761,
+     "pair_encoder": 375136,
+     "imu_encoder": 47312,
+     "measure": 10755,
+     "inp": 21504,
+     "cells": 111744,
+     "gain_head": 4901,
+     "residual_head": 4803,
+     "bias_head": 4803,
+     "logvar_head": 4803
+    },
+    "macs": {
+     "total": 31574496.0,
+     "pair_encoder": 30790656.0,
+     "imu_encoder": 622080.0,
+     "measure": 10656.0,
+     "inp": 21408.0,
+     "cells": 110592.0,
+     "gain_head": 4848.0,
+     "residual_head": 4752.0,
+     "bias_head": 4752.0,
+     "logvar_head": 4752.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 5.413922516692599,
+     "p50": 4.9247119459323585,
+     "p95": 8.373339526588097,
+     "p99": 10.266722494270653,
+     "max": 11.078618001192808
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1421.0,
+    "class_ms": {
+     "small": 2.585632966666627,
+     "compute": 1.448079933333332,
+     "mem_cache": 0.6512820000000349,
+     "mem_dram": 0.002436566666669082
+    },
+    "max_ws_mb": 0.5625,
+    "hidden": 96,
+    "pair_widths": [
+     96,
+     128,
+     192,
+     256
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 745377,
+     "pair_encoder": 384384,
+     "imu_encoder": 73616,
+     "measure": 18435,
+     "inp": 36864,
+     "cells": 198144,
+     "gain_head": 8581,
+     "residual_head": 8451,
+     "bias_head": 8451,
+     "logvar_head": 8451
+    },
+    "macs": {
+     "total": 31968384.0,
+     "pair_encoder": 30799872.0,
+     "imu_encoder": 883200.0,
+     "measure": 18304.0,
+     "inp": 36736.0,
+     "cells": 196608.0,
+     "gain_head": 8512.0,
+     "residual_head": 8384.0,
+     "bias_head": 8384.0,
+     "logvar_head": 8384.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 5.922787539152936,
+     "p50": 5.507157009560615,
+     "p95": 9.795874578412622,
+     "p99": 10.649554457049817,
+     "max": 13.90622102189809
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1421.0,
+    "class_ms": {
+     "small": 2.6964278333333254,
+     "compute": 1.4161284333333526,
+     "mem_cache": 0.7636638666666997,
+     "mem_dram": 0.0019733666666641512
+    },
+    "max_ws_mb": 0.5625,
+    "hidden": 128,
+    "pair_widths": [
+     96,
+     128,
+     192,
+     256
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 1187489,
+     "pair_encoder": 402880,
+     "imu_encoder": 144656,
+     "measure": 39939,
+     "inp": 79872,
+     "cells": 444672,
+     "gain_head": 19013,
+     "residual_head": 18819,
+     "bias_head": 18819,
+     "logvar_head": 18819
+    },
+    "macs": {
+     "total": 33044928.0,
+     "pair_encoder": 30818304.0,
+     "imu_encoder": 1589760.0,
+     "measure": 39744.0,
+     "inp": 79680.0,
+     "cells": 442368.0,
+     "gain_head": 18912.0,
+     "residual_head": 18720.0,
+     "bias_head": 18720.0,
+     "logvar_head": 18720.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 6.289505153174766,
+     "p50": 5.931045045144856,
+     "p95": 9.367102128453553,
+     "p99": 11.407270599156622,
+     "max": 18.682091031223536
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1421.0,
+    "class_ms": {
+     "small": 3.114027466666684,
+     "compute": 1.7731800000000009,
+     "mem_cache": 1.1874800666666718,
+     "mem_dram": 0.002706433333333068
+    },
+    "max_ws_mb": 0.5625,
+    "hidden": 192,
+    "pair_widths": [
+     96,
+     128,
+     192,
+     256
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 1793441,
+     "pair_encoder": 421376,
+     "imu_encoder": 240272,
+     "measure": 69635,
+     "inp": 139264,
+     "cells": 789504,
+     "gain_head": 33541,
+     "residual_head": 33283,
+     "bias_head": 33283,
+     "logvar_head": 33283
+    },
+    "macs": {
+     "total": 34506496.0,
+     "pair_encoder": 30836736.0,
+     "imu_encoder": 2542080.0,
+     "measure": 69376.0,
+     "inp": 139008.0,
+     "cells": 786432.0,
+     "gain_head": 33408.0,
+     "residual_head": 33152.0,
+     "bias_head": 33152.0,
+     "logvar_head": 33152.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 6.806900854942135,
+     "p50": 6.401050020940602,
+     "p95": 10.422295075841248,
+     "p99": 12.517423257231716,
+     "max": 16.860330011695623
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1421.0,
+    "class_ms": {
+     "small": 3.5052108999999527,
+     "compute": 1.7409501999999932,
+     "mem_cache": 0.7125267666666779,
+     "mem_dram": 1.2023483000000488
+    },
+    "max_ws_mb": 0.75,
+    "hidden": 256,
+    "pair_widths": [
+     96,
+     128,
+     192,
+     256
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 3496865,
+     "pair_encoder": 458368,
+     "imu_encoder": 505232,
+     "measure": 153603,
+     "inp": 307200,
+     "cells": 1774080,
+     "gain_head": 74885,
+     "residual_head": 74499,
+     "bias_head": 74499,
+     "logvar_head": 74499
+    },
+    "macs": {
+     "total": 38584704.0,
+     "pair_encoder": 30873600.0,
+     "imu_encoder": 5184000.0,
+     "measure": 153216.0,
+     "inp": 306816.0,
+     "cells": 1769472.0,
+     "gain_head": 74688.0,
+     "residual_head": 74304.0,
+     "bias_head": 74304.0,
+     "logvar_head": 74304.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 8.195856001376258,
+     "p50": 7.636392489075661,
+     "p95": 12.643108505289998,
+     "p99": 14.13860852480866,
+     "max": 19.869556999765337
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1421.0,
+    "class_ms": {
+     "small": 3.206682699999967,
+     "compute": 1.6350695000000202,
+     "mem_cache": 0.6234048999999983,
+     "mem_dram": 1.9322085666666842
+    },
+    "max_ws_mb": 1.6875,
+    "hidden": 384,
+    "pair_widths": [
+     96,
+     128,
+     192,
+     256
+    ],
+    "trained": false
+   },
+   {
+    "params": {
+     "total": 5855649,
+     "pair_encoder": 495360,
+     "imu_encoder": 868496,
+     "measure": 270339,
+     "inp": 540672,
+     "cells": 3151872,
+     "gain_head": 132613,
+     "residual_head": 132099,
+     "bias_head": 132099,
+     "logvar_head": 132099
+    },
+    "macs": {
+     "total": 44203008.0,
+     "pair_encoder": 30910464.0,
+     "imu_encoder": 8808960.0,
+     "measure": 269824.0,
+     "inp": 540160.0,
+     "cells": 3145728.0,
+     "gain_head": 132352.0,
+     "residual_head": 131840.0,
+     "bias_head": 131840.0,
+     "logvar_head": 131840.0
+    },
+    "ms": {
+     "n": 220,
+     "mean": 11.85299653602256,
+     "p50": 11.478109518066049,
+     "p95": 15.912779857171687,
+     "p99": 17.167539515066892,
+     "max": 20.229608984664083
+    },
+    "top_ops": 417.0,
+    "nested_ops": 1421.0,
+    "class_ms": {
+     "small": 4.093544999999997,
+     "compute": 1.7151141999999986,
+     "mem_cache": 0.7449052000000278,
+     "mem_dram": 4.131751433333282
+    },
+    "max_ws_mb": 3.0,
+    "hidden": 512,
+    "pair_widths": [
+     96,
+     128,
+     192,
+     256
+    ],
+    "trained": false
+   }
+  ],
+  "checkpoint_point": {
+   "params": {
+    "total": 488753,
+    "pair_encoder": 127760,
+    "imu_encoder": 73616,
+    "measure": 18435,
+    "inp": 36864,
+    "cells": 198144,
+    "gain_head": 8581,
+    "residual_head": 8451,
+    "bias_head": 8451,
+    "logvar_head": 8451
+   },
+   "macs": {
+    "total": 9398400.0,
+    "pair_encoder": 8229888.0,
+    "imu_encoder": 883200.0,
+    "measure": 18304.0,
+    "inp": 36736.0,
+    "cells": 196608.0,
+    "gain_head": 8512.0,
+    "residual_head": 8384.0,
+    "bias_head": 8384.0,
+    "logvar_head": 8384.0
+   },
+   "ms": {
+    "n": 220,
+    "mean": 4.489675443090329,
+    "p50": 3.821632999461144,
+    "p95": 7.528648775769395,
+    "p99": 11.305907238274813,
+    "max": 20.931383012793958
+   },
+   "top_ops": 417.0,
+   "nested_ops": 1431.0,
+   "class_ms": {
+    "small": 3.0535985999999538,
+    "compute": 0.65842326666666,
+    "mem_cache": 0.5629397666666566
+   },
+   "max_ws_mb": 0.1875,
+   "hidden": 128,
+   "pair_widths": [
+    48,
+    64,
+    96,
+    128
+   ],
+   "trained": true
+  }
+ },
+ "icp": {
+  "baseline": {
+   "knobs": {},
+   "wall_ms": {
+    "n": 239,
+    "mean": 33.70208243077629,
+    "p50": 32.664588070474565,
+    "p95": 45.821702387183905,
+    "p99": 55.557801378890886,
+    "max": 75.86603099480271
+   },
+   "components_ms": {
+    "prep": {
+     "n": 239,
+     "mean": 0.9468532407025039,
+     "p50": 0.7286728359758854,
+     "p95": 1.9195386092178524,
+     "p99": 2.885332752484829,
+     "max": 3.7517359014600515
+    },
+    "icp_scan": {
+     "n": 239,
+     "mean": 16.233783841686456,
+     "p50": 15.55635198019445,
+     "p95": 23.037286777980626,
+     "p99": 30.81111213890836,
+     "max": 35.19566298928112
+    },
+    "icp_map": {
+     "n": 239,
+     "mean": 7.677530904912301,
+     "p50": 7.2403139201924205,
+     "p95": 11.269586766138671,
+     "p99": 14.615381632465871,
+     "max": 33.2561630057171
+    },
+    "icp_other": {
+     "n": 239,
+     "mean": 2.1655232071775212,
+     "p50": 1.8527468200773,
+     "p95": 3.6684341728687286,
+     "p99": 4.925586343742909,
+     "max": 7.6358618680387735
+    },
+    "network": {
+     "n": 239,
+     "mean": 4.847014118784797,
+     "p50": 4.518022993579507,
+     "p95": 7.801629370078444,
+     "p99": 9.45874996483326,
+     "max": 11.374166002497077
+    },
+    "post": {
+     "n": 239,
+     "mean": 0.47697161254180775,
+     "p50": 0.40813302621245384,
+     "p95": 0.90912306914106,
+     "p99": 1.2430345034226777,
+     "max": 1.6983520472422242
+    },
+    "glue": {
+     "n": 239,
+     "mean": 1.354405504970901,
+     "p50": 1.2285170378163457,
+     "p95": 2.1416983567178245,
+     "p99": 3.2918265392072508,
+     "max": 4.190474632196128
+    }
+   },
+   "imu_callback_us": {
+    "c0": 13.475271611752223,
+    "c1_per_sample": 3.026152773057683,
+    "points": [
+     [
+      0.0,
+      11.838972568511963
+     ],
+     [
+      5.0,
+      27.11854176595807
+     ],
+     [
+      10.0,
+      39.785460103303194
+     ],
+     [
+      15.0,
+      54.78598177433014
+     ],
+     [
+      20.0,
+      94.01794523000717
+     ],
+     [
+      25.0,
+      89.11045733839273
+     ],
+     [
+      30.0,
+      98.0579643510282
+     ],
+     [
+      40.0,
+      131.87900185585022
+     ]
+    ]
+   },
+   "census": {
+    "scans": 30,
+    "components": {
+     "prep": {
+      "top_ops": 13.0,
+      "nested_ops": 10.0,
+      "mflop": 0.00036,
+      "ms": {
+       "small": 0.07452036666668861
+      }
+     },
+     "icp_scan": {
+      "top_ops": 1823.0,
+      "nested_ops": 4692.0,
+      "mflop": 16.868454,
+      "ms": {
+       "small": 14.97226116666558,
+       "mem_cache": 3.5815191666668036
+      }
+     },
+     "icp_map": {
+      "top_ops": 592.0,
+      "nested_ops": 1303.0,
+      "mflop": 20.821003,
+      "ms": {
+       "small": 4.993190433333042,
+       "mem_dram": 3.084063433333337
+      }
+     },
+     "icp_other": {
+      "top_ops": 355.4,
+      "nested_ops": 624.0,
+      "mflop": 0.005511,
+      "ms": {
+       "small": 2.1744737999998307
+      }
+     },
+     "network": {
+      "top_ops": 417.0,
+      "nested_ops": 1467.0,
+      "mflop": 2.1575397333333335,
+      "ms": {
+       "small": 3.3652035333327652,
+       "compute": 0.7383326000000673,
+       "mem_cache": 0.6351268000001696
+      }
+     },
+     "post": {
+      "top_ops": 45.0,
+      "nested_ops": 27.0,
+      "mflop": 0.006484,
+      "ms": {
+       "small": 0.20252996666675707
+      }
+     },
+     "glue": {
+      "top_ops": 208.0,
+      "nested_ops": 210.0,
+      "mflop": 0.000336,
+      "ms": {
+       "small": 0.7538410666668394
+      }
+     }
+    },
+    "max_ws_bytes": 2592000.0,
+    "heavy_ops": [
+     {
+      "component": "icp_scan",
+      "op": "aten::min",
+      "shapes": "[[1, 360, 360]]",
+      "calls_per_scan": 16.0,
+      "ms_per_scan": 1.8721948666667945,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_map",
+      "op": "aten::min",
+      "shapes": "[[1, 360, 1800]]",
+      "calls_per_scan": 4.0,
+      "ms_per_scan": 1.4518476666666769,
+      "ws_mb": 2.471923828125,
+      "class": "mem_dram"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::bmm",
+      "shapes": "[[1, 360, 4], [1, 4, 360]]",
+      "calls_per_scan": 16.0,
+      "ms_per_scan": 0.9207625999999497,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_map",
+      "op": "aten::sqrt_",
+      "shapes": "[[1, 360, 1800]]",
+      "calls_per_scan": 4.0,
+      "ms_per_scan": 0.639548366666666,
+      "ws_mb": 2.471923828125,
+      "class": "mem_dram"
+     },
+     {
+      "component": "icp_map",
+      "op": "aten::bmm",
+      "shapes": "[[1, 360, 4], [1, 4, 1800]]",
+      "calls_per_scan": 4.0,
+      "ms_per_scan": 0.6338669000000606,
+      "ws_mb": 2.471923828125,
+      "class": "mem_dram"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::sqrt_",
+      "shapes": "[[1, 360, 360]]",
+      "calls_per_scan": 16.0,
+      "ms_per_scan": 0.5059141999999941,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_map",
+      "op": "aten::clamp_min_",
+      "shapes": "[[1, 360, 1800]]",
+      "calls_per_scan": 4.0,
+      "ms_per_scan": 0.3373804999999701,
+      "ws_mb": 2.471923828125,
+      "class": "mem_dram"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[384], [1, 128], [128, 384]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.21989090000013603,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::clamp_min_",
+      "shapes": "[[1, 360, 360]]",
+      "calls_per_scan": 16.0,
+      "ms_per_scan": 0.21356370000006578,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 64, 1, 184], [96, 64, 1, 5], [96]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.13605610000002683,
+      "ws_mb": 0.1171875,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 48, 1, 364], [64, 48, 1, 5], [64]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.1149540999999954,
+      "ws_mb": 0.066650390625,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 8, 1, 366], [48, 8, 1, 7], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.10007110000001193,
+      "ws_mb": 0.01116943359375,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 96, 1, 92], [128, 96, 1, 3], [128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.08787403333328185,
+      "ws_mb": 0.140625,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::convolution",
+      "shapes": "[[1, 8, 366], [48, 8, 7], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.06497363333333149,
+      "ws_mb": 0.01116943359375,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::gru_cell",
+      "shapes": "[[1, 128], [1, 128], [384, 128], [384, 128], [384], [384]]",
+      "calls_per_scan": 2.0,
+      "ms_per_scan": 0.05578596666665617,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::view",
+      "shapes": "[[1, 360, 360]]",
+      "calls_per_scan": 16.0,
+      "ms_per_scan": 0.05149956666672597,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::linear",
+      "shapes": "[[1, 128], [384, 128], [384]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.04241566666665702,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[128], [1, 288], [288, 128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.034886100000052836,
+      "ws_mb": 0.140625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[384], [10, 48], [48, 384]]",
+      "calls_per_scan": 0.5,
+      "ms_per_scan": 0.03347366666666882,
+      "ws_mb": 0.0703125,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::silu",
+      "shapes": "[[1, 48, 360]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.027285766666686202,
+      "ws_mb": 0.06591796875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[128], [1, 287], [287, 128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.02616073333331272,
+      "ws_mb": 0.14013671875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::_convolution",
+      "shapes": "[[1, 8, 366], [48, 8, 7], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.024883433333377128,
+      "ws_mb": 0.01116943359375,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::native_group_norm",
+      "shapes": "[[1, 48, 360], [48], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.022977100000048326,
+      "ws_mb": 0.06591796875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[128], [1, 140], [140, 128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.01931973333336815,
+      "ws_mb": 0.068359375,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::t",
+      "shapes": "[[384, 128]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.019198799999983984,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     }
+    ]
+   },
+   "params": {
+    "total": 488753,
+    "pair_encoder": 127760,
+    "imu_encoder": 73616,
+    "measure": 18435,
+    "inp": 36864,
+    "cells": 198144,
+    "gain_head": 8581,
+    "residual_head": 8451,
+    "bias_head": 8451,
+    "logvar_head": 8451
+   },
+   "hybrid": true,
+   "icp": {
+    "iterations": 8,
+    "deskew_passes": 2,
+    "map_iterations": 4,
+    "submap_keyframes": 5
+   }
+  },
+  "gn_iterations_4": {
+   "knobs": {
+    "iterations": 4
+   },
+   "wall_ms": {
+    "n": 239,
+    "mean": 27.781148483513007,
+    "p50": 26.676179957576096,
+    "p95": 38.760609913151704,
+    "p99": 45.15285087050871,
+    "max": 69.70900006126612
+   },
+   "components_ms": {
+    "prep": {
+     "n": 239,
+     "mean": 1.1353953142365962,
+     "p50": 0.8886128198355436,
+     "p95": 1.9340202445164323,
+     "p99": 3.8399211317300836,
+     "max": 12.421171879395843
+    },
+    "icp_scan": {
+     "n": 239,
+     "mean": 10.131214600675992,
+     "p50": 9.60957002826035,
+     "p95": 15.775380458217114,
+     "p99": 20.207150937058035,
+     "max": 21.70723199378699
+    },
+    "icp_map": {
+     "n": 239,
+     "mean": 7.440635571587504,
+     "p50": 6.740363081917167,
+     "p95": 12.276837264653292,
+     "p99": 15.482862275093797,
+     "max": 25.706163025461137
+    },
+    "icp_other": {
+     "n": 239,
+     "mean": 2.186258210972045,
+     "p50": 1.9354550167918205,
+     "p95": 3.828791435807943,
+     "p99": 4.911864413879812,
+     "max": 10.250302031636238
+    },
+    "network": {
+     "n": 239,
+     "mean": 4.983796590011738,
+     "p50": 4.634251003153622,
+     "p95": 7.558542664628475,
+     "p99": 9.327657972462479,
+     "max": 13.400821015238762
+    },
+    "post": {
+     "n": 239,
+     "mean": 0.4767047462470549,
+     "p50": 0.41925895493477583,
+     "p95": 0.8299737819470465,
+     "p99": 1.1056962190195925,
+     "max": 1.4293009880930185
+    },
+    "glue": {
+     "n": 239,
+     "mean": 1.4271434497820783,
+     "p50": 1.2511691311374307,
+     "p95": 2.5544721051119263,
+     "p99": 4.254535054787993,
+     "max": 5.659822141751647
+    }
+   },
+   "imu_callback_us": {
+    "c0": 22.647599514601804,
+    "c1_per_sample": 2.632332927218282,
+    "points": [
+     [
+      0.0,
+      11.9705218821764
+     ],
+     [
+      5.0,
+      60.640973970294
+     ],
+     [
+      10.0,
+      48.20647882297635
+     ],
+     [
+      15.0,
+      52.65907384455204
+     ],
+     [
+      20.0,
+      72.0094540156424
+     ],
+     [
+      25.0,
+      82.46599463745952
+     ],
+     [
+      30.0,
+      98.9465625025332
+     ],
+     [
+      40.0,
+      135.97001088783145
+     ]
+    ]
+   },
+   "census": {
+    "scans": 30,
+    "components": {
+     "prep": {
+      "top_ops": 13.0,
+      "nested_ops": 10.0,
+      "mflop": 0.00036,
+      "ms": {
+       "small": 0.09970993333336592
+      }
+     },
+     "icp_scan": {
+      "top_ops": 1183.0,
+      "nested_ops": 2604.0,
+      "mflop": 8.464406,
+      "ms": {
+       "small": 8.269910300000069,
+       "mem_cache": 1.6227963333332471
+      }
+     },
+     "icp_map": {
+      "top_ops": 592.0,
+      "nested_ops": 1303.0,
+      "mflop": 20.821003,
+      "ms": {
+       "small": 4.759852266666711,
+       "mem_dram": 3.203721299999947
+      }
+     },
+     "icp_other": {
+      "top_ops": 355.4,
+      "nested_ops": 624.0,
+      "mflop": 0.005511,
+      "ms": {
+       "small": 2.045194299999802
+      }
+     },
+     "network": {
+      "top_ops": 417.0,
+      "nested_ops": 1467.0,
+      "mflop": 2.1575397333333335,
+      "ms": {
+       "small": 2.884584800000328,
+       "compute": 0.6254351666665916,
+       "mem_cache": 0.6125044666666303
+      }
+     },
+     "post": {
+      "top_ops": 45.0,
+      "nested_ops": 27.0,
+      "mflop": 0.006484,
+      "ms": {
+       "small": 0.20313650000004388
+      }
+     },
+     "glue": {
+      "top_ops": 208.0,
+      "nested_ops": 210.0,
+      "mflop": 0.000336,
+      "ms": {
+       "small": 0.7823853000000061
+      }
+     }
+    },
+    "max_ws_bytes": 2592000.0,
+    "heavy_ops": [
+     {
+      "component": "icp_map",
+      "op": "aten::min",
+      "shapes": "[[1, 360, 1800]]",
+      "calls_per_scan": 4.0,
+      "ms_per_scan": 1.3583320333333155,
+      "ws_mb": 2.471923828125,
+      "class": "mem_dram"
+     },
+     {
+      "component": "icp_map",
+      "op": "aten::sqrt_",
+      "shapes": "[[1, 360, 1800]]",
+      "calls_per_scan": 4.0,
+      "ms_per_scan": 0.868346066666649,
+      "ws_mb": 2.471923828125,
+      "class": "mem_dram"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::min",
+      "shapes": "[[1, 360, 360]]",
+      "calls_per_scan": 8.0,
+      "ms_per_scan": 0.7974922333333646,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_map",
+      "op": "aten::bmm",
+      "shapes": "[[1, 360, 4], [1, 4, 1800]]",
+      "calls_per_scan": 4.0,
+      "ms_per_scan": 0.580863233333345,
+      "ws_mb": 2.471923828125,
+      "class": "mem_dram"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::bmm",
+      "shapes": "[[1, 360, 4], [1, 4, 360]]",
+      "calls_per_scan": 8.0,
+      "ms_per_scan": 0.5093802666666506,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_map",
+      "op": "aten::clamp_min_",
+      "shapes": "[[1, 360, 1800]]",
+      "calls_per_scan": 4.0,
+      "ms_per_scan": 0.37018146666666396,
+      "ws_mb": 2.471923828125,
+      "class": "mem_dram"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[384], [1, 128], [128, 384]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.21207613333336145,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::sqrt_",
+      "shapes": "[[1, 360, 360]]",
+      "calls_per_scan": 8.0,
+      "ms_per_scan": 0.19895493333330522,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 64, 1, 184], [96, 64, 1, 5], [96]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.13156329999998362,
+      "ws_mb": 0.1171875,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 48, 1, 364], [64, 48, 1, 5], [64]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.1061369666666629,
+      "ws_mb": 0.066650390625,
+      "class": "compute"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::clamp_min_",
+      "shapes": "[[1, 360, 360]]",
+      "calls_per_scan": 8.0,
+      "ms_per_scan": 0.09564580000000174,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 96, 1, 92], [128, 96, 1, 3], [128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.08170643333331268,
+      "ws_mb": 0.140625,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 8, 1, 366], [48, 8, 1, 7], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.07508490000000265,
+      "ws_mb": 0.01116943359375,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::linear",
+      "shapes": "[[1, 128], [384, 128], [384]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.055937299999899555,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::gru_cell",
+      "shapes": "[[1, 128], [1, 128], [384, 128], [384, 128], [384], [384]]",
+      "calls_per_scan": 2.0,
+      "ms_per_scan": 0.038968199999918324,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[128], [1, 288], [288, 128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.038755800000034896,
+      "ws_mb": 0.140625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::silu",
+      "shapes": "[[1, 48, 360]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.03452240000000966,
+      "ws_mb": 0.06591796875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::_convolution",
+      "shapes": "[[1, 8, 366], [48, 8, 7], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.026584700000011795,
+      "ws_mb": 0.01116943359375,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::t",
+      "shapes": "[[384, 128]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.024143533333495237,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::native_group_norm",
+      "shapes": "[[1, 48, 360], [48], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.023084033333343298,
+      "ws_mb": 0.06591796875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[128], [1, 287], [287, 128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.022471433333358434,
+      "ws_mb": 0.14013671875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[128], [1, 140], [140, 128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.02006903333332448,
+      "ws_mb": 0.068359375,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_map",
+      "op": "aten::view",
+      "shapes": "[[1, 360, 1800]]",
+      "calls_per_scan": 4.0,
+      "ms_per_scan": 0.01891956666665889,
+      "ws_mb": 2.471923828125,
+      "class": "mem_dram"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[384], [10, 48], [48, 384]]",
+      "calls_per_scan": 0.5,
+      "ms_per_scan": 0.01765996666666227,
+      "ws_mb": 0.0703125,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::_convolution",
+      "shapes": "[[1, 6, 40], [32, 6, 3], [32]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.016636833333318647,
+      "ws_mb": 0.002197265625,
+      "class": "compute"
+     }
+    ]
+   },
+   "params": {
+    "total": 488753,
+    "pair_encoder": 127760,
+    "imu_encoder": 73616,
+    "measure": 18435,
+    "inp": 36864,
+    "cells": 198144,
+    "gain_head": 8581,
+    "residual_head": 8451,
+    "bias_head": 8451,
+    "logvar_head": 8451
+   },
+   "hybrid": true,
+   "icp": {
+    "iterations": 4,
+    "deskew_passes": 2,
+    "map_iterations": 4,
+    "submap_keyframes": 5
+   }
+  },
+  "deskew_passes_1": {
+   "knobs": {
+    "deskew_passes": 1
+   },
+   "wall_ms": {
+    "n": 239,
+    "mean": 30.562216640064282,
+    "p50": 29.574882006272674,
+    "p95": 41.195994324516505,
+    "p99": 53.166236663237214,
+    "max": 70.6700049340725
+   },
+   "components_ms": {
+    "prep": {
+     "n": 239,
+     "mean": 1.1636437984596486,
+     "p50": 0.9004790335893631,
+     "p95": 2.3258142755366857,
+     "p99": 4.697019881568856,
+     "max": 5.680806003510952
+    },
+    "icp_scan": {
+     "n": 239,
+     "mean": 9.729691387532146,
+     "p50": 9.252080926671624,
+     "p95": 15.750650106929239,
+     "p99": 17.446161981206387,
+     "max": 19.239886081777513
+    },
+    "icp_map": {
+     "n": 239,
+     "mean": 9.432728004361264,
+     "p50": 8.766351034864783,
+     "p95": 14.33713032165542,
+     "p99": 19.041132370475687,
+     "max": 30.35642101895064
+    },
+    "icp_other": {
+     "n": 239,
+     "mean": 2.568483040921359,
+     "p50": 2.1978019503876567,
+     "p95": 4.597679071594029,
+     "p99": 7.03003690345213,
+     "max": 8.208399056456983
+    },
+    "network": {
+     "n": 239,
+     "mean": 5.621453235705215,
+     "p50": 5.159360938705504,
+     "p95": 8.873504877556115,
+     "p99": 13.004790537524974,
+     "max": 13.869350892491639
+    },
+    "post": {
+     "n": 239,
+     "mean": 0.5101503022054062,
+     "p50": 0.4374990239739418,
+     "p95": 0.8985420223325491,
+     "p99": 1.241047049406916,
+     "max": 1.8567590741440654
+    },
+    "glue": {
+     "n": 239,
+     "mean": 1.5360668708792415,
+     "p50": 1.339428941719234,
+     "p95": 2.578940370585768,
+     "p99": 3.649312376510352,
+     "max": 7.198923965916038
+    }
+   },
+   "imu_callback_us": {
+    "c0": 11.059023173792022,
+    "c1_per_sample": 3.0342190127287596,
+    "points": [
+     [
+      0.0,
+      12.950506061315536
+     ],
+     [
+      5.0,
+      28.285023290663958
+     ],
+     [
+      10.0,
+      41.09391011297703
+     ],
+     [
+      15.0,
+      56.12499080598354
+     ],
+     [
+      20.0,
+      68.527995608747
+     ],
+     [
+      25.0,
+      87.07348024472594
+     ],
+     [
+      30.0,
+      95.56004079058766
+     ],
+     [
+      40.0,
+      138.81799532100558
+     ]
+    ]
+   },
+   "census": {
+    "scans": 30,
+    "components": {
+     "prep": {
+      "top_ops": 13.0,
+      "nested_ops": 10.0,
+      "mflop": 0.00036,
+      "ms": {
+       "small": 0.08788749999997134
+      }
+     },
+     "icp_scan": {
+      "top_ops": 912.0,
+      "nested_ops": 2347.0,
+      "mflop": 8.434227,
+      "ms": {
+       "small": 7.96373343333349,
+       "mem_cache": 1.969436999999756
+      }
+     },
+     "icp_map": {
+      "top_ops": 592.0,
+      "nested_ops": 1303.0,
+      "mflop": 20.821003,
+      "ms": {
+       "small": 6.004388499999803,
+       "mem_dram": 4.249490200000042
+      }
+     },
+     "icp_other": {
+      "top_ops": 355.4,
+      "nested_ops": 624.0,
+      "mflop": 0.005511,
+      "ms": {
+       "small": 2.4193794666665975
+      }
+     },
+     "network": {
+      "top_ops": 417.0,
+      "nested_ops": 1467.0,
+      "mflop": 2.1575397333333335,
+      "ms": {
+       "small": 3.6499416666663986,
+       "compute": 0.7048892000000134,
+       "mem_cache": 0.7102479333333006
+      }
+     },
+     "post": {
+      "top_ops": 45.0,
+      "nested_ops": 27.0,
+      "mflop": 0.006484,
+      "ms": {
+       "small": 0.22487816666654953
+      }
+     },
+     "glue": {
+      "top_ops": 208.0,
+      "nested_ops": 210.0,
+      "mflop": 0.000336,
+      "ms": {
+       "small": 0.891973666666517
+      }
+     }
+    },
+    "max_ws_bytes": 2592000.0,
+    "heavy_ops": [
+     {
+      "component": "icp_map",
+      "op": "aten::min",
+      "shapes": "[[1, 360, 1800]]",
+      "calls_per_scan": 4.0,
+      "ms_per_scan": 1.731624299999969,
+      "ws_mb": 2.471923828125,
+      "class": "mem_dram"
+     },
+     {
+      "component": "icp_map",
+      "op": "aten::bmm",
+      "shapes": "[[1, 360, 4], [1, 4, 1800]]",
+      "calls_per_scan": 4.0,
+      "ms_per_scan": 1.241175400000001,
+      "ws_mb": 2.471923828125,
+      "class": "mem_dram"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::min",
+      "shapes": "[[1, 360, 360]]",
+      "calls_per_scan": 8.0,
+      "ms_per_scan": 1.02999153333319,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_map",
+      "op": "aten::sqrt_",
+      "shapes": "[[1, 360, 1800]]",
+      "calls_per_scan": 4.0,
+      "ms_per_scan": 0.8286755000000101,
+      "ws_mb": 2.471923828125,
+      "class": "mem_dram"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::bmm",
+      "shapes": "[[1, 360, 4], [1, 4, 360]]",
+      "calls_per_scan": 8.0,
+      "ms_per_scan": 0.5547135666665869,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_map",
+      "op": "aten::clamp_min_",
+      "shapes": "[[1, 360, 1800]]",
+      "calls_per_scan": 4.0,
+      "ms_per_scan": 0.4063558000000126,
+      "ws_mb": 2.471923828125,
+      "class": "mem_dram"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::sqrt_",
+      "shapes": "[[1, 360, 360]]",
+      "calls_per_scan": 8.0,
+      "ms_per_scan": 0.25324256666666983,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[384], [1, 128], [128, 384]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.24898973333332253,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 64, 1, 184], [96, 64, 1, 5], [96]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.1453964666666747,
+      "ws_mb": 0.1171875,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 48, 1, 364], [64, 48, 1, 5], [64]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.12239989999999742,
+      "ws_mb": 0.066650390625,
+      "class": "compute"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::clamp_min_",
+      "shapes": "[[1, 360, 360]]",
+      "calls_per_scan": 8.0,
+      "ms_per_scan": 0.10862563333330964,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 96, 1, 92], [128, 96, 1, 3], [128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.09415529999997574,
+      "ws_mb": 0.140625,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 8, 1, 366], [48, 8, 1, 7], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.06842913333328518,
+      "ws_mb": 0.01116943359375,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::linear",
+      "shapes": "[[1, 128], [384, 128], [384]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.05687806666668456,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[128], [1, 288], [288, 128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.048591099999964346,
+      "ws_mb": 0.140625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::gru_cell",
+      "shapes": "[[1, 128], [1, 128], [384, 128], [384, 128], [384], [384]]",
+      "calls_per_scan": 2.0,
+      "ms_per_scan": 0.039253333333431506,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[128], [1, 287], [287, 128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.0355293333333148,
+      "ws_mb": 0.14013671875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_map",
+      "op": "aten::view",
+      "shapes": "[[1, 360, 1800]]",
+      "calls_per_scan": 4.0,
+      "ms_per_scan": 0.03242576666670467,
+      "ws_mb": 2.471923828125,
+      "class": "mem_dram"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[384], [10, 48], [48, 384]]",
+      "calls_per_scan": 0.5,
+      "ms_per_scan": 0.03077496666668837,
+      "ws_mb": 0.0703125,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[384], [11, 48], [48, 384]]",
+      "calls_per_scan": 0.4,
+      "ms_per_scan": 0.02845553333334101,
+      "ws_mb": 0.0703125,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::t",
+      "shapes": "[[384, 128]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.027993366666682628,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::_convolution",
+      "shapes": "[[1, 8, 366], [48, 8, 7], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.025560433333327578,
+      "ws_mb": 0.01116943359375,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[128], [1, 140], [140, 128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.025257666666637667,
+      "ws_mb": 0.068359375,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::native_group_norm",
+      "shapes": "[[1, 48, 360], [48], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.024771000000042113,
+      "ws_mb": 0.06591796875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::silu",
+      "shapes": "[[1, 48, 360]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.02271456666666903,
+      "ws_mb": 0.06591796875,
+      "class": "mem_cache"
+     }
+    ]
+   },
+   "params": {
+    "total": 488753,
+    "pair_encoder": 127760,
+    "imu_encoder": 73616,
+    "measure": 18435,
+    "inp": 36864,
+    "cells": 198144,
+    "gain_head": 8581,
+    "residual_head": 8451,
+    "bias_head": 8451,
+    "logvar_head": 8451
+   },
+   "hybrid": true,
+   "icp": {
+    "iterations": 8,
+    "deskew_passes": 1,
+    "map_iterations": 4,
+    "submap_keyframes": 5
+   }
+  },
+  "map_iterations_2": {
+   "knobs": {
+    "map_iterations": 2
+   },
+   "wall_ms": {
+    "n": 239,
+    "mean": 33.09622363023709,
+    "p50": 32.18697395641357,
+    "p95": 41.65767737431452,
+    "p99": 45.76074396725744,
+    "max": 51.364348037168384
+   },
+   "components_ms": {
+    "prep": {
+     "n": 239,
+     "mean": 1.065253091598062,
+     "p50": 0.8601180743426085,
+     "p95": 2.1433937596157184,
+     "p99": 3.9812022144906254,
+     "max": 4.797411849722266
+    },
+    "icp_scan": {
+     "n": 239,
+     "mean": 18.1260855895736,
+     "p50": 17.54487003199756,
+     "p95": 23.612286639399827,
+     "p99": 25.668850059155375,
+     "max": 28.821264975704253
+    },
+    "icp_map": {
+     "n": 239,
+     "mean": 4.788667971373508,
+     "p50": 4.360013059340417,
+     "p95": 7.474720280151813,
+     "p99": 10.475419121794406,
+     "max": 13.959769974462688
+    },
+    "icp_other": {
+     "n": 239,
+     "mean": 2.1736633619994987,
+     "p50": 1.9309092313051224,
+     "p95": 3.361460089217871,
+     "p99": 4.80557460570708,
+     "max": 5.762970075011253
+    },
+    "network": {
+     "n": 239,
+     "mean": 5.0240944867376935,
+     "p50": 4.626109031960368,
+     "p95": 7.928733376320451,
+     "p99": 9.58020913647488,
+     "max": 10.74171403888613
+    },
+    "post": {
+     "n": 239,
+     "mean": 0.5091097201980557,
+     "p50": 0.4225259181112051,
+     "p95": 0.9323794278316196,
+     "p99": 1.301369522698224,
+     "max": 3.7442739121615887
+    },
+    "glue": {
+     "n": 239,
+     "mean": 1.4093494087566765,
+     "p50": 1.2750215828418732,
+     "p95": 2.254012413322925,
+     "p99": 3.1174149434082223,
+     "max": 3.601868054829538
+    }
+   },
+   "imu_callback_us": {
+    "c0": 15.454469797175767,
+    "c1_per_sample": 3.07665376884298,
+    "points": [
+     [
+      0.0,
+      15.534518752247095
+     ],
+     [
+      5.0,
+      30.90454265475273
+     ],
+     [
+      10.0,
+      47.943030949682
+     ],
+     [
+      15.0,
+      58.815989177674055
+     ],
+     [
+      20.0,
+      76.28550520166755
+     ],
+     [
+      25.0,
+      94.91801029071212
+     ],
+     [
+      30.0,
+      106.58800601959229
+     ],
+     [
+      40.0,
+      138.76095181331038
+     ]
+    ]
+   },
+   "census": {
+    "scans": 30,
+    "components": {
+     "prep": {
+      "top_ops": 13.0,
+      "nested_ops": 10.0,
+      "mflop": 0.00036,
+      "ms": {
+       "small": 0.06389379999998016
+      }
+     },
+     "icp_scan": {
+      "top_ops": 1823.0,
+      "nested_ops": 4692.0,
+      "mflop": 16.868454,
+      "ms": {
+       "small": 14.321576133333416,
+       "mem_cache": 3.96729036666669
+      }
+     },
+     "icp_map": {
+      "top_ops": 432.0,
+      "nested_ops": 781.0,
+      "mflop": 10.425591,
+      "ms": {
+       "small": 3.2786930666665026,
+       "mem_dram": 1.8480005333332827
+      }
+     },
+     "icp_other": {
+      "top_ops": 355.4,
+      "nested_ops": 624.0,
+      "mflop": 0.005511,
+      "ms": {
+       "small": 1.9603641000000558
+      }
+     },
+     "network": {
+      "top_ops": 417.0,
+      "nested_ops": 1467.0,
+      "mflop": 2.1575397333333335,
+      "ms": {
+       "small": 3.5075053333331345,
+       "compute": 0.7444434333334655,
+       "mem_cache": 0.6808118333333352
+      }
+     },
+     "post": {
+      "top_ops": 45.0,
+      "nested_ops": 27.0,
+      "mflop": 0.006484,
+      "ms": {
+       "small": 0.1908700333334413
+      }
+     },
+     "glue": {
+      "top_ops": 208.0,
+      "nested_ops": 210.0,
+      "mflop": 0.000336,
+      "ms": {
+       "small": 0.7634521000001104
+      }
+     }
+    },
+    "max_ws_bytes": 2592000.0,
+    "heavy_ops": [
+     {
+      "component": "icp_scan",
+      "op": "aten::min",
+      "shapes": "[[1, 360, 360]]",
+      "calls_per_scan": 16.0,
+      "ms_per_scan": 1.8155494666666807,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::bmm",
+      "shapes": "[[1, 360, 4], [1, 4, 360]]",
+      "calls_per_scan": 16.0,
+      "ms_per_scan": 1.3925775000000238,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_map",
+      "op": "aten::min",
+      "shapes": "[[1, 360, 1800]]",
+      "calls_per_scan": 2.0,
+      "ms_per_scan": 0.7822038999999721,
+      "ws_mb": 2.471923828125,
+      "class": "mem_dram"
+     },
+     {
+      "component": "icp_map",
+      "op": "aten::bmm",
+      "shapes": "[[1, 360, 4], [1, 4, 1800]]",
+      "calls_per_scan": 2.0,
+      "ms_per_scan": 0.4784911666666961,
+      "ws_mb": 2.471923828125,
+      "class": "mem_dram"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::sqrt_",
+      "shapes": "[[1, 360, 360]]",
+      "calls_per_scan": 16.0,
+      "ms_per_scan": 0.46011046666667454,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_map",
+      "op": "aten::sqrt_",
+      "shapes": "[[1, 360, 1800]]",
+      "calls_per_scan": 2.0,
+      "ms_per_scan": 0.3606264666666657,
+      "ws_mb": 2.471923828125,
+      "class": "mem_dram"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::clamp_min_",
+      "shapes": "[[1, 360, 360]]",
+      "calls_per_scan": 16.0,
+      "ms_per_scan": 0.2427101666666204,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[384], [1, 128], [128, 384]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.2208234666666911,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_map",
+      "op": "aten::clamp_min_",
+      "shapes": "[[1, 360, 1800]]",
+      "calls_per_scan": 2.0,
+      "ms_per_scan": 0.21124046666666552,
+      "ws_mb": 2.471923828125,
+      "class": "mem_dram"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 48, 1, 364], [64, 48, 1, 5], [64]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.16160186666670417,
+      "ws_mb": 0.066650390625,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 64, 1, 184], [96, 64, 1, 5], [96]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.14045529999998763,
+      "ws_mb": 0.1171875,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 8, 1, 366], [48, 8, 1, 7], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.09336059999999051,
+      "ws_mb": 0.01116943359375,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 96, 1, 92], [128, 96, 1, 3], [128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.09060026666665387,
+      "ws_mb": 0.140625,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::gru_cell",
+      "shapes": "[[1, 128], [1, 128], [384, 128], [384, 128], [384], [384]]",
+      "calls_per_scan": 2.0,
+      "ms_per_scan": 0.06762536666669285,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::linear",
+      "shapes": "[[1, 128], [384, 128], [384]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.043666099999913444,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[128], [1, 288], [288, 128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.04046246666668545,
+      "ws_mb": 0.140625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::view",
+      "shapes": "[[1, 360, 360]]",
+      "calls_per_scan": 16.0,
+      "ms_per_scan": 0.0384226999999696,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::_convolution",
+      "shapes": "[[1, 8, 366], [48, 8, 7], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.03134216666666495,
+      "ws_mb": 0.01116943359375,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::convolution",
+      "shapes": "[[1, 8, 366], [48, 8, 7], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.03051396666668249,
+      "ws_mb": 0.01116943359375,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[128], [1, 287], [287, 128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.03029343333333479,
+      "ws_mb": 0.14013671875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::silu",
+      "shapes": "[[1, 48, 360]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.029396133333327946,
+      "ws_mb": 0.06591796875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::native_group_norm",
+      "shapes": "[[1, 48, 360], [48], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.025947866666664775,
+      "ws_mb": 0.06591796875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::t",
+      "shapes": "[[384, 128]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.023404166666644834,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::copy_",
+      "shapes": "[[1, 48, 1, 360], [48, 1, 1]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.01979986666667512,
+      "ws_mb": 0.06591796875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::transpose",
+      "shapes": "[[384, 128]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.019793766666715493,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     }
+    ]
+   },
+   "params": {
+    "total": 488753,
+    "pair_encoder": 127760,
+    "imu_encoder": 73616,
+    "measure": 18435,
+    "inp": 36864,
+    "cells": 198144,
+    "gain_head": 8581,
+    "residual_head": 8451,
+    "bias_head": 8451,
+    "logvar_head": 8451
+   },
+   "hybrid": true,
+   "icp": {
+    "iterations": 8,
+    "deskew_passes": 2,
+    "map_iterations": 2,
+    "submap_keyframes": 5
+   }
+  },
+  "keyframes_3": {
+   "knobs": {
+    "submap_keyframes": 3
+   },
+   "wall_ms": {
+    "n": 239,
+    "mean": 30.775789908916693,
+    "p50": 30.01972008496523,
+    "p95": 41.706954583059996,
+    "p99": 45.64870396396145,
+    "max": 52.579537965357304
+   },
+   "components_ms": {
+    "prep": {
+     "n": 239,
+     "mean": 1.059786271923475,
+     "p50": 0.8313659345731139,
+     "p95": 2.0914795575663443,
+     "p99": 3.0354073271155366,
+     "max": 6.453635171055794
+    },
+    "icp_scan": {
+     "n": 239,
+     "mean": 14.948034463216509,
+     "p50": 14.257575967349112,
+     "p95": 20.020952320192006,
+     "p99": 25.385463379789158,
+     "max": 28.30279292538762
+    },
+    "icp_map": {
+     "n": 239,
+     "mean": 6.154082277614358,
+     "p50": 5.547452950850129,
+     "p95": 9.911854902748019,
+     "p99": 12.699506678618496,
+     "max": 24.711409001611173
+    },
+    "icp_other": {
+     "n": 239,
+     "mean": 2.029792011606363,
+     "p50": 1.8772180192172527,
+     "p95": 3.160262480378151,
+     "p99": 3.8886137399822482,
+     "max": 4.454831010662019
+    },
+    "network": {
+     "n": 239,
+     "mean": 4.851811132919838,
+     "p50": 4.423383041284978,
+     "p95": 7.793010887689888,
+     "p99": 10.233967658132315,
+     "max": 11.449746089056134
+    },
+    "post": {
+     "n": 239,
+     "mean": 0.4485488497110466,
+     "p50": 0.3917489666491747,
+     "p95": 0.7802692241966724,
+     "p99": 1.1478550243191425,
+     "max": 1.3823939952999353
+    },
+    "glue": {
+     "n": 239,
+     "mean": 1.2837349019251048,
+     "p50": 1.2076131533831358,
+     "p95": 1.8830855959095059,
+     "p99": 2.234655322972685,
+     "max": 3.4487013472244143
+    }
+   },
+   "imu_callback_us": {
+    "c0": 12.659832758170763,
+    "c1_per_sample": 2.8291262889322932,
+    "points": [
+     [
+      0.0,
+      12.280943337827921
+     ],
+     [
+      5.0,
+      26.715511921793222
+     ],
+     [
+      10.0,
+      39.99000182375312
+     ],
+     [
+      15.0,
+      56.0214975848794
+     ],
+     [
+      20.0,
+      70.89698920026422
+     ],
+     [
+      25.0,
+      81.22401777654886
+     ],
+     [
+      30.0,
+      99.87206431105733
+     ],
+     [
+      40.0,
+      124.50094800442457
+     ]
+    ]
+   },
+   "census": {
+    "scans": 30,
+    "components": {
+     "prep": {
+      "top_ops": 13.0,
+      "nested_ops": 10.0,
+      "mflop": 0.00036,
+      "ms": {
+       "small": 0.06451383333331895
+      }
+     },
+     "icp_scan": {
+      "top_ops": 1823.0,
+      "nested_ops": 4692.0,
+      "mflop": 16.868454,
+      "ms": {
+       "small": 13.099061366667025,
+       "mem_cache": 3.1754164666666553
+      }
+     },
+     "icp_map": {
+      "top_ops": 592.0,
+      "nested_ops": 1303.0,
+      "mflop": 12.526603,
+      "ms": {
+       "small": 4.62385340000009,
+       "mem_dram": 1.9665691666666822
+      }
+     },
+     "icp_other": {
+      "top_ops": 355.4,
+      "nested_ops": 624.0,
+      "mflop": 0.004071,
+      "ms": {
+       "small": 2.1468494999997687
+      }
+     },
+     "network": {
+      "top_ops": 417.0,
+      "nested_ops": 1467.0,
+      "mflop": 2.1575397333333335,
+      "ms": {
+       "small": 3.135178666666526,
+       "compute": 0.6470905333332837,
+       "mem_cache": 0.5956709666667703
+      }
+     },
+     "post": {
+      "top_ops": 45.0,
+      "nested_ops": 27.0,
+      "mflop": 0.006484,
+      "ms": {
+       "small": 0.16424426666660805
+      }
+     },
+     "glue": {
+      "top_ops": 208.0,
+      "nested_ops": 210.0,
+      "mflop": 0.000336,
+      "ms": {
+       "small": 0.7095616333333743
+      }
+     }
+    },
+    "max_ws_bytes": 1555200.0,
+    "heavy_ops": [
+     {
+      "component": "icp_scan",
+      "op": "aten::min",
+      "shapes": "[[1, 360, 360]]",
+      "calls_per_scan": 16.0,
+      "ms_per_scan": 1.6712922333333964,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_map",
+      "op": "aten::min",
+      "shapes": "[[1, 360, 1080]]",
+      "calls_per_scan": 4.0,
+      "ms_per_scan": 0.9913737333333024,
+      "ws_mb": 1.483154296875,
+      "class": "mem_dram"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::bmm",
+      "shapes": "[[1, 360, 4], [1, 4, 360]]",
+      "calls_per_scan": 16.0,
+      "ms_per_scan": 0.8654835999999684,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_map",
+      "op": "aten::bmm",
+      "shapes": "[[1, 360, 4], [1, 4, 1080]]",
+      "calls_per_scan": 4.0,
+      "ms_per_scan": 0.4067752666667019,
+      "ws_mb": 1.483154296875,
+      "class": "mem_dram"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::sqrt_",
+      "shapes": "[[1, 360, 360]]",
+      "calls_per_scan": 16.0,
+      "ms_per_scan": 0.404737999999989,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_map",
+      "op": "aten::sqrt_",
+      "shapes": "[[1, 360, 1080]]",
+      "calls_per_scan": 4.0,
+      "ms_per_scan": 0.38911170000000805,
+      "ws_mb": 1.483154296875,
+      "class": "mem_dram"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[384], [1, 128], [128, 384]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.2091946333333915,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::clamp_min_",
+      "shapes": "[[1, 360, 360]]",
+      "calls_per_scan": 16.0,
+      "ms_per_scan": 0.1868779999999412,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_map",
+      "op": "aten::clamp_min_",
+      "shapes": "[[1, 360, 1080]]",
+      "calls_per_scan": 4.0,
+      "ms_per_scan": 0.15854023333332248,
+      "ws_mb": 1.483154296875,
+      "class": "mem_dram"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 64, 1, 184], [96, 64, 1, 5], [96]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.12667490000001635,
+      "ws_mb": 0.1171875,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 48, 1, 364], [64, 48, 1, 5], [64]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.11393156666664968,
+      "ws_mb": 0.066650390625,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 96, 1, 92], [128, 96, 1, 3], [128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.08495599999996678,
+      "ws_mb": 0.140625,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 8, 1, 366], [48, 8, 1, 7], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.0758070000000373,
+      "ws_mb": 0.01116943359375,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[128], [1, 288], [288, 128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.037695133333305424,
+      "ws_mb": 0.140625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::linear",
+      "shapes": "[[1, 128], [384, 128], [384]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.03764960000002344,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::view",
+      "shapes": "[[1, 360, 360]]",
+      "calls_per_scan": 16.0,
+      "ms_per_scan": 0.033192100000040095,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::gru_cell",
+      "shapes": "[[1, 128], [1, 128], [384, 128], [384, 128], [384], [384]]",
+      "calls_per_scan": 2.0,
+      "ms_per_scan": 0.031969466666676695,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::_convolution",
+      "shapes": "[[1, 8, 366], [48, 8, 7], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.029020200000007514,
+      "ws_mb": 0.01116943359375,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::silu",
+      "shapes": "[[1, 48, 360]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.026240700000004287,
+      "ws_mb": 0.06591796875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[128], [1, 287], [287, 128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.02397103333333289,
+      "ws_mb": 0.14013671875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::native_group_norm",
+      "shapes": "[[1, 48, 360], [48], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.022021699999980764,
+      "ws_mb": 0.06591796875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[128], [1, 140], [140, 128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.0217568000000351,
+      "ws_mb": 0.068359375,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::t",
+      "shapes": "[[384, 128]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.020888800000012264,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 6, 1, 40], [32, 6, 1, 3], [32]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.01973476666667314,
+      "ws_mb": 0.002197265625,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::transpose",
+      "shapes": "[[384, 128]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.018052266666672444,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     }
+    ]
+   },
+   "params": {
+    "total": 488753,
+    "pair_encoder": 127760,
+    "imu_encoder": 73616,
+    "measure": 18435,
+    "inp": 36864,
+    "cells": 198144,
+    "gain_head": 8581,
+    "residual_head": 8451,
+    "bias_head": 8451,
+    "logvar_head": 8451
+   },
+   "hybrid": true,
+   "icp": {
+    "iterations": 8,
+    "deskew_passes": 2,
+    "map_iterations": 4,
+    "submap_keyframes": 3
+   }
+  },
+  "keyframes_2": {
+   "knobs": {
+    "submap_keyframes": 2
+   },
+   "wall_ms": {
+    "n": 239,
+    "mean": 32.77148743536105,
+    "p50": 31.74341202247888,
+    "p95": 41.73056966392323,
+    "p99": 52.631619200110435,
+    "max": 64.5974880317226
+   },
+   "components_ms": {
+    "prep": {
+     "n": 239,
+     "mean": 1.0910278476509714,
+     "p50": 0.8624939946457744,
+     "p95": 1.9276727922260761,
+     "p99": 3.0242258007638165,
+     "max": 10.126206907443702
+    },
+    "icp_scan": {
+     "n": 239,
+     "mean": 16.101283159605753,
+     "p50": 15.53043001331389,
+     "p95": 22.12985430378467,
+     "p99": 27.060730142984546,
+     "max": 39.30572408717126
+    },
+    "icp_map": {
+     "n": 239,
+     "mean": 6.22197618283269,
+     "p50": 5.585881997831166,
+     "p95": 10.452307760715485,
+     "p99": 12.763318333309146,
+     "max": 14.85165604390204
+    },
+    "icp_other": {
+     "n": 239,
+     "mean": 2.2774454879391333,
+     "p50": 1.9994138274341822,
+     "p95": 3.7013156921602777,
+     "p99": 5.163027655798943,
+     "max": 13.079469092190266
+    },
+    "network": {
+     "n": 239,
+     "mean": 5.088762351444233,
+     "p50": 4.6678310027346015,
+     "p95": 8.569669886492193,
+     "p99": 10.180886771995576,
+     "max": 11.693661101162434
+    },
+    "post": {
+     "n": 239,
+     "mean": 0.4843712178405733,
+     "p50": 0.41359802708029747,
+     "p95": 0.8605211274698376,
+     "p99": 1.1557357106357815,
+     "max": 4.38648508861661
+    },
+    "glue": {
+     "n": 239,
+     "mean": 1.5066211880476965,
+     "p50": 1.3178929220885038,
+     "p95": 2.4677310138940802,
+     "p99": 3.4818259626626973,
+     "max": 7.063868921250105
+    }
+   },
+   "imu_callback_us": {
+    "c0": 15.126224834808054,
+    "c1_per_sample": 2.884319055601395,
+    "points": [
+     [
+      0.0,
+      12.738513760268688
+     ],
+     [
+      5.0,
+      28.574024327099323
+     ],
+     [
+      10.0,
+      44.84556848183274
+     ],
+     [
+      15.0,
+      64.55642869696021
+     ],
+     [
+      20.0,
+      71.00147195160389
+     ],
+     [
+      25.0,
+      87.98198541626334
+     ],
+     [
+      30.0,
+      99.07351341098547
+     ],
+     [
+      40.0,
+      130.46455569565296
+     ]
+    ]
+   },
+   "census": {
+    "scans": 30,
+    "components": {
+     "prep": {
+      "top_ops": 13.0,
+      "nested_ops": 10.0,
+      "mflop": 0.00036,
+      "ms": {
+       "small": 0.06846466666668904
+      }
+     },
+     "icp_scan": {
+      "top_ops": 1823.0,
+      "nested_ops": 4692.0,
+      "mflop": 16.868454,
+      "ms": {
+       "small": 15.12042726666622,
+       "mem_cache": 4.080790033333399
+      }
+     },
+     "icp_map": {
+      "top_ops": 592.0,
+      "nested_ops": 1303.0,
+      "mflop": 8.379403,
+      "ms": {
+       "small": 4.83385519999988,
+       "mem_dram": 1.6290394333334457
+      }
+     },
+     "icp_other": {
+      "top_ops": 355.4,
+      "nested_ops": 624.0,
+      "mflop": 0.003351,
+      "ms": {
+       "small": 2.158851333333446
+      }
+     },
+     "network": {
+      "top_ops": 417.0,
+      "nested_ops": 1467.0,
+      "mflop": 2.1575397333333335,
+      "ms": {
+       "small": 3.380076099999736,
+       "compute": 0.7083233000000567,
+       "mem_cache": 0.5969331666666875
+      }
+     },
+     "post": {
+      "top_ops": 45.0,
+      "nested_ops": 27.0,
+      "mflop": 0.006484,
+      "ms": {
+       "small": 0.19553306666664358
+      }
+     },
+     "glue": {
+      "top_ops": 208.0,
+      "nested_ops": 210.0,
+      "mflop": 0.000336,
+      "ms": {
+       "small": 0.7662906333333667
+      }
+     }
+    },
+    "max_ws_bytes": 1036800.0,
+    "heavy_ops": [
+     {
+      "component": "icp_scan",
+      "op": "aten::min",
+      "shapes": "[[1, 360, 360]]",
+      "calls_per_scan": 16.0,
+      "ms_per_scan": 2.0462441333334,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::bmm",
+      "shapes": "[[1, 360, 4], [1, 4, 360]]",
+      "calls_per_scan": 16.0,
+      "ms_per_scan": 1.305277800000142,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_map",
+      "op": "aten::min",
+      "shapes": "[[1, 360, 720]]",
+      "calls_per_scan": 4.0,
+      "ms_per_scan": 0.6869342333334552,
+      "ws_mb": 0.98876953125,
+      "class": "mem_dram"
+     },
+     {
+      "component": "icp_map",
+      "op": "aten::bmm",
+      "shapes": "[[1, 360, 4], [1, 4, 720]]",
+      "calls_per_scan": 4.0,
+      "ms_per_scan": 0.5744109333333317,
+      "ws_mb": 0.98876953125,
+      "class": "mem_dram"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::sqrt_",
+      "shapes": "[[1, 360, 360]]",
+      "calls_per_scan": 16.0,
+      "ms_per_scan": 0.44447216666661377,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_map",
+      "op": "aten::sqrt_",
+      "shapes": "[[1, 360, 720]]",
+      "calls_per_scan": 4.0,
+      "ms_per_scan": 0.23370960000001087,
+      "ws_mb": 0.98876953125,
+      "class": "mem_dram"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::clamp_min_",
+      "shapes": "[[1, 360, 360]]",
+      "calls_per_scan": 16.0,
+      "ms_per_scan": 0.227845999999958,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[384], [1, 128], [128, 384]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.20610223333329875,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 64, 1, 184], [96, 64, 1, 5], [96]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.14542886666665117,
+      "ws_mb": 0.1171875,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 48, 1, 364], [64, 48, 1, 5], [64]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.1368288333333202,
+      "ws_mb": 0.066650390625,
+      "class": "compute"
+     },
+     {
+      "component": "icp_map",
+      "op": "aten::clamp_min_",
+      "shapes": "[[1, 360, 720]]",
+      "calls_per_scan": 4.0,
+      "ms_per_scan": 0.11789366666666733,
+      "ws_mb": 0.98876953125,
+      "class": "mem_dram"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 8, 1, 366], [48, 8, 1, 7], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.08412783333330058,
+      "ws_mb": 0.01116943359375,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 96, 1, 92], [128, 96, 1, 3], [128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.08216666666669796,
+      "ws_mb": 0.140625,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::gru_cell",
+      "shapes": "[[1, 128], [1, 128], [384, 128], [384, 128], [384], [384]]",
+      "calls_per_scan": 2.0,
+      "ms_per_scan": 0.04163876666667736,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::view",
+      "shapes": "[[1, 360, 360]]",
+      "calls_per_scan": 16.0,
+      "ms_per_scan": 0.04030153333330477,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::linear",
+      "shapes": "[[1, 128], [384, 128], [384]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.03899830000000268,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[128], [1, 288], [288, 128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.03563156666670013,
+      "ws_mb": 0.140625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::_convolution",
+      "shapes": "[[1, 8, 366], [48, 8, 7], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.028617833333318413,
+      "ws_mb": 0.01116943359375,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[128], [1, 287], [287, 128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.02522986666668633,
+      "ws_mb": 0.14013671875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::silu",
+      "shapes": "[[1, 48, 360]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.024233699999990733,
+      "ws_mb": 0.06591796875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::t",
+      "shapes": "[[384, 128]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.023295433333360902,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::native_group_norm",
+      "shapes": "[[1, 48, 360], [48], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.022325200000022107,
+      "ws_mb": 0.06591796875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::conv1d",
+      "shapes": "[[1, 8, 366], [48, 8, 7], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.021200466666632563,
+      "ws_mb": 0.01116943359375,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[128], [1, 140], [140, 128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.018919700000012866,
+      "ws_mb": 0.068359375,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::transpose",
+      "shapes": "[[384, 128]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.018337366666602385,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     }
+    ]
+   },
+   "params": {
+    "total": 488753,
+    "pair_encoder": 127760,
+    "imu_encoder": 73616,
+    "measure": 18435,
+    "inp": 36864,
+    "cells": 198144,
+    "gain_head": 8581,
+    "residual_head": 8451,
+    "bias_head": 8451,
+    "logvar_head": 8451
+   },
+   "hybrid": true,
+   "icp": {
+    "iterations": 8,
+    "deskew_passes": 2,
+    "map_iterations": 4,
+    "submap_keyframes": 2
+   }
+  },
+  "scan_to_scan_only": {
+   "knobs": {
+    "submap_keyframes": 0
+   },
+   "wall_ms": {
+    "n": 239,
+    "mean": 27.85772979054912,
+    "p50": 27.0054490538314,
+    "p95": 35.946966672781855,
+    "p99": 41.34357492905111,
+    "max": 46.10330308787525
+   },
+   "components_ms": {
+    "prep": {
+     "n": 239,
+     "mean": 1.2045008559987946,
+     "p50": 0.9634599555283785,
+     "p95": 2.10584559245035,
+     "p99": 3.1487877224572007,
+     "max": 11.336111929267645
+    },
+    "icp_scan": {
+     "n": 239,
+     "mean": 17.6284378360388,
+     "p50": 16.663698945194483,
+     "p95": 23.955604119691994,
+     "p99": 31.549411520827565,
+     "max": 34.302590996958315
+    },
+    "icp_map": {
+     "n": 239,
+     "mean": 0.0,
+     "p50": 0.0,
+     "p95": 0.0,
+     "p99": 0.0,
+     "max": 0.0
+    },
+    "icp_other": {
+     "n": 239,
+     "mean": 1.4179700597824536,
+     "p50": 1.2521949829533696,
+     "p95": 2.3777163121849294,
+     "p99": 3.3208061032928535,
+     "max": 6.008923053741455
+    },
+    "network": {
+     "n": 239,
+     "mean": 5.534182892523893,
+     "p50": 5.220526014454663,
+     "p95": 8.697005617432296,
+     "p99": 10.087637337855995,
+     "max": 11.78273803088814
+    },
+    "post": {
+     "n": 239,
+     "mean": 0.5370111318663635,
+     "p50": 0.45442499686032534,
+     "p95": 1.0666478308849037,
+     "p99": 1.521046347916127,
+     "max": 3.002973855473101
+    },
+    "glue": {
+     "n": 239,
+     "mean": 1.5356270143388142,
+     "p50": 1.3752107042819262,
+     "p95": 2.3790985927917054,
+     "p99": 3.80372478626669,
+     "max": 5.862044054083526
+    }
+   },
+   "imu_callback_us": {
+    "c0": 14.66007162711786,
+    "c1_per_sample": 2.8031368746905403,
+    "points": [
+     [
+      0.0,
+      12.244039680808783
+     ],
+     [
+      5.0,
+      36.140496376901865
+     ],
+     [
+      10.0,
+      40.251994505524635
+     ],
+     [
+      15.0,
+      55.556418374180794
+     ],
+     [
+      20.0,
+      68.7669962644577
+     ],
+     [
+      25.0,
+      83.42345245182514
+     ],
+     [
+      30.0,
+      98.37100515142083
+     ],
+     [
+      40.0,
+      128.98101704195142
+     ]
+    ]
+   },
+   "census": {
+    "scans": 30,
+    "components": {
+     "prep": {
+      "top_ops": 13.0,
+      "nested_ops": 10.0,
+      "mflop": 0.00036,
+      "ms": {
+       "small": 0.07324863333335471
+      }
+     },
+     "icp_scan": {
+      "top_ops": 1823.0,
+      "nested_ops": 4692.0,
+      "mflop": 16.868454,
+      "ms": {
+       "small": 15.222285700000578,
+       "mem_cache": 3.897661133333023
+      }
+     },
+     "icp_map": {
+      "top_ops": 0.0,
+      "nested_ops": 0.0,
+      "mflop": 0.0,
+      "ms": {}
+     },
+     "icp_other": {
+      "top_ops": 183.0,
+      "nested_ops": 390.0,
+      "mflop": 0.000453,
+      "ms": {
+       "small": 1.2281963000001486
+      }
+     },
+     "network": {
+      "top_ops": 417.0,
+      "nested_ops": 1467.0,
+      "mflop": 2.1575397333333335,
+      "ms": {
+       "small": 3.1072418999998037,
+       "compute": 0.6515101333333085,
+       "mem_cache": 0.5939271333333556
+      }
+     },
+     "post": {
+      "top_ops": 45.0,
+      "nested_ops": 27.0,
+      "mflop": 0.006484,
+      "ms": {
+       "small": 0.22782946666667261
+      }
+     },
+     "glue": {
+      "top_ops": 208.0,
+      "nested_ops": 210.0,
+      "mflop": 0.000336,
+      "ms": {
+       "small": 0.7896309333331877
+      }
+     }
+    },
+    "max_ws_bytes": 518400.0,
+    "heavy_ops": [
+     {
+      "component": "icp_scan",
+      "op": "aten::min",
+      "shapes": "[[1, 360, 360]]",
+      "calls_per_scan": 16.0,
+      "ms_per_scan": 1.7360615333331753,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::bmm",
+      "shapes": "[[1, 360, 4], [1, 4, 360]]",
+      "calls_per_scan": 16.0,
+      "ms_per_scan": 1.3957794333331752,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::sqrt_",
+      "shapes": "[[1, 360, 360]]",
+      "calls_per_scan": 16.0,
+      "ms_per_scan": 0.44824873333339305,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::clamp_min_",
+      "shapes": "[[1, 360, 360]]",
+      "calls_per_scan": 16.0,
+      "ms_per_scan": 0.2572109999999712,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[384], [1, 128], [128, 384]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.20638093333329652,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 64, 1, 184], [96, 64, 1, 5], [96]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.13030883333333865,
+      "ws_mb": 0.1171875,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 48, 1, 364], [64, 48, 1, 5], [64]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.1238651666666643,
+      "ws_mb": 0.066650390625,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 96, 1, 92], [128, 96, 1, 3], [128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.07861540000001041,
+      "ws_mb": 0.140625,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 8, 1, 366], [48, 8, 1, 7], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.06831866666666925,
+      "ws_mb": 0.01116943359375,
+      "class": "compute"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::view",
+      "shapes": "[[1, 360, 360]]",
+      "calls_per_scan": 16.0,
+      "ms_per_scan": 0.04238396666664476,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::linear",
+      "shapes": "[[1, 128], [384, 128], [384]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.041077466666732204,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[128], [1, 288], [288, 128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.03589299999999664,
+      "ws_mb": 0.140625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::gru_cell",
+      "shapes": "[[1, 128], [1, 128], [384, 128], [384, 128], [384], [384]]",
+      "calls_per_scan": 2.0,
+      "ms_per_scan": 0.03537873333334526,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[128], [1, 287], [287, 128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.031199633333366117,
+      "ws_mb": 0.14013671875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::conv1d",
+      "shapes": "[[1, 8, 366], [48, 8, 7], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.030849366666662777,
+      "ws_mb": 0.01116943359375,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::_convolution",
+      "shapes": "[[1, 8, 366], [48, 8, 7], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.029326433333320655,
+      "ws_mb": 0.01116943359375,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::silu",
+      "shapes": "[[1, 48, 360]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.024923566666674987,
+      "ws_mb": 0.06591796875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::t",
+      "shapes": "[[384, 128]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.02286806666668152,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[384], [10, 48], [48, 384]]",
+      "calls_per_scan": 0.5,
+      "ms_per_scan": 0.021989566666669753,
+      "ws_mb": 0.0703125,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::native_group_norm",
+      "shapes": "[[1, 48, 360], [48], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.021060799999960727,
+      "ws_mb": 0.06591796875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[128], [1, 140], [140, 128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.02057826666662876,
+      "ws_mb": 0.068359375,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::_unsafe_view",
+      "shapes": "[[1, 360, 360]]",
+      "calls_per_scan": 16.0,
+      "ms_per_scan": 0.017976466666666475,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[384], [11, 48], [48, 384]]",
+      "calls_per_scan": 0.4,
+      "ms_per_scan": 0.017089733333346277,
+      "ws_mb": 0.0703125,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::transpose",
+      "shapes": "[[384, 128]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.015725566666594134,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 128, 1, 9], [32, 128, 1, 1], [32]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.015224866666657667,
+      "ws_mb": 0.015625,
+      "class": "compute"
+     }
+    ]
+   },
+   "params": {
+    "total": 488753,
+    "pair_encoder": 127760,
+    "imu_encoder": 73616,
+    "measure": 18435,
+    "inp": 36864,
+    "cells": 198144,
+    "gain_head": 8581,
+    "residual_head": 8451,
+    "bias_head": 8451,
+    "logvar_head": 8451
+   },
+   "hybrid": true,
+   "icp": {
+    "iterations": 8,
+    "deskew_passes": 2,
+    "map_iterations": 4,
+    "submap_keyframes": 0
+   }
+  },
+  "lean_combo": {
+   "knobs": {
+    "iterations": 4,
+    "deskew_passes": 1,
+    "map_iterations": 2,
+    "submap_keyframes": 3
+   },
+   "wall_ms": {
+    "n": 239,
+    "mean": 19.88966656346108,
+    "p50": 19.480663002468646,
+    "p95": 26.83803472900763,
+    "p99": 29.970562316011637,
+    "max": 34.986326936632395
+   },
+   "components_ms": {
+    "prep": {
+     "n": 239,
+     "mean": 1.0109194174455673,
+     "p50": 0.8487688610330224,
+     "p95": 1.7761021968908606,
+     "p99": 2.977428825106477,
+     "max": 4.085554275661707
+    },
+    "icp_scan": {
+     "n": 239,
+     "mean": 5.245562092884284,
+     "p50": 4.849680000916123,
+     "p95": 8.570837881416082,
+     "p99": 12.2039708099328,
+     "max": 12.972270022146404
+    },
+    "icp_map": {
+     "n": 239,
+     "mean": 4.557113308327031,
+     "p50": 4.099474987015128,
+     "p95": 7.626784814056008,
+     "p99": 9.797187531366946,
+     "max": 11.343462974764407
+    },
+    "icp_other": {
+     "n": 239,
+     "mean": 2.16526667018534,
+     "p50": 1.9004939822480083,
+     "p95": 3.7010109750553966,
+     "p99": 4.898336359765384,
+     "max": 7.843683939427137
+    },
+    "network": {
+     "n": 239,
+     "mean": 5.054226249386264,
+     "p50": 4.691964015364647,
+     "p95": 7.764342974405735,
+     "p99": 10.552679144311698,
+     "max": 13.763570925220847
+    },
+    "post": {
+     "n": 239,
+     "mean": 0.49534391185120685,
+     "p50": 0.41386799421161413,
+     "p95": 0.9005234693177044,
+     "p99": 1.5005756146274511,
+     "max": 3.975409083068371
+    },
+    "glue": {
+     "n": 239,
+     "mean": 1.3612349133813855,
+     "p50": 1.2421108549460769,
+     "p95": 2.0744809065945446,
+     "p99": 3.1108094332739715,
+     "max": 4.810621845535934
+    }
+   },
+   "imu_callback_us": {
+    "c0": 12.411056278987713,
+    "c1_per_sample": 3.1111791687912516,
+    "points": [
+     [
+      0.0,
+      12.111966498196125
+     ],
+     [
+      5.0,
+      36.0680278390646
+     ],
+     [
+      10.0,
+      45.637949369847775
+     ],
+     [
+      15.0,
+      53.33946319296956
+     ],
+     [
+      20.0,
+      69.11397213116288
+     ],
+     [
+      25.0,
+      82.3090085759759
+     ],
+     [
+      30.0,
+      109.45554822683334
+     ],
+     [
+      40.0,
+      142.3734938725829
+     ]
+    ]
+   },
+   "census": {
+    "scans": 30,
+    "components": {
+     "prep": {
+      "top_ops": 13.0,
+      "nested_ops": 10.0,
+      "mflop": 0.00036,
+      "ms": {
+       "small": 0.0672350666666588
+      }
+     },
+     "icp_scan": {
+      "top_ops": 592.0,
+      "nested_ops": 1303.0,
+      "mflop": 4.232203,
+      "ms": {
+       "small": 4.230935566666551,
+       "mem_cache": 0.8933739666666661
+      }
+     },
+     "icp_map": {
+      "top_ops": 432.0,
+      "nested_ops": 781.0,
+      "mflop": 6.278391,
+      "ms": {
+       "small": 3.0487623999998186,
+       "mem_dram": 1.3408172333333184
+      }
+     },
+     "icp_other": {
+      "top_ops": 355.4,
+      "nested_ops": 624.0,
+      "mflop": 0.004071,
+      "ms": {
+       "small": 1.8812749666664919
+      }
+     },
+     "network": {
+      "top_ops": 417.0,
+      "nested_ops": 1467.0,
+      "mflop": 2.1575397333333335,
+      "ms": {
+       "small": 3.1138319333331426,
+       "compute": 0.6865548000000155,
+       "mem_cache": 0.5971492333333486
+      }
+     },
+     "post": {
+      "top_ops": 45.0,
+      "nested_ops": 27.0,
+      "mflop": 0.006484,
+      "ms": {
+       "small": 0.16866480000000406
+      }
+     },
+     "glue": {
+      "top_ops": 208.0,
+      "nested_ops": 210.0,
+      "mflop": 0.000336,
+      "ms": {
+       "small": 0.8063388333333311
+      }
+     }
+    },
+    "max_ws_bytes": 1555200.0,
+    "heavy_ops": [
+     {
+      "component": "icp_map",
+      "op": "aten::min",
+      "shapes": "[[1, 360, 1080]]",
+      "calls_per_scan": 2.0,
+      "ms_per_scan": 0.5304212999999952,
+      "ws_mb": 1.483154296875,
+      "class": "mem_dram"
+     },
+     {
+      "component": "icp_map",
+      "op": "aten::bmm",
+      "shapes": "[[1, 360, 4], [1, 4, 1080]]",
+      "calls_per_scan": 2.0,
+      "ms_per_scan": 0.5099918666666682,
+      "ws_mb": 1.483154296875,
+      "class": "mem_dram"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::min",
+      "shapes": "[[1, 360, 360]]",
+      "calls_per_scan": 4.0,
+      "ms_per_scan": 0.43184063333336326,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::bmm",
+      "shapes": "[[1, 360, 4], [1, 4, 360]]",
+      "calls_per_scan": 4.0,
+      "ms_per_scan": 0.2817984333333131,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_map",
+      "op": "aten::sqrt_",
+      "shapes": "[[1, 360, 1080]]",
+      "calls_per_scan": 2.0,
+      "ms_per_scan": 0.19740096666665327,
+      "ws_mb": 1.483154296875,
+      "class": "mem_dram"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[384], [1, 128], [128, 384]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.19656750000000264,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 64, 1, 184], [96, 64, 1, 5], [96]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.1456651000000186,
+      "ws_mb": 0.1171875,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 48, 1, 364], [64, 48, 1, 5], [64]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.1325110333333472,
+      "ws_mb": 0.066650390625,
+      "class": "compute"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::sqrt_",
+      "shapes": "[[1, 360, 360]]",
+      "calls_per_scan": 4.0,
+      "ms_per_scan": 0.11956910000000025,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "icp_map",
+      "op": "aten::clamp_min_",
+      "shapes": "[[1, 360, 1080]]",
+      "calls_per_scan": 2.0,
+      "ms_per_scan": 0.08892403333332935,
+      "ws_mb": 1.483154296875,
+      "class": "mem_dram"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 96, 1, 92], [128, 96, 1, 3], [128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.07802489999999158,
+      "ws_mb": 0.140625,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 8, 1, 366], [48, 8, 1, 7], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.07572033333333071,
+      "ws_mb": 0.01116943359375,
+      "class": "compute"
+     },
+     {
+      "component": "icp_scan",
+      "op": "aten::clamp_min_",
+      "shapes": "[[1, 360, 360]]",
+      "calls_per_scan": 4.0,
+      "ms_per_scan": 0.04955693333333198,
+      "ws_mb": 0.494384765625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[128], [1, 288], [288, 128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.03891163333329809,
+      "ws_mb": 0.140625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::_convolution",
+      "shapes": "[[1, 8, 366], [48, 8, 7], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.03823013333333074,
+      "ws_mb": 0.01116943359375,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::linear",
+      "shapes": "[[1, 128], [384, 128], [384]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.03421059999995292,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::gru_cell",
+      "shapes": "[[1, 128], [1, 128], [384, 128], [384, 128], [384], [384]]",
+      "calls_per_scan": 2.0,
+      "ms_per_scan": 0.034207633333376244,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[128], [1, 287], [287, 128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.027303633333316726,
+      "ws_mb": 0.14013671875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::silu",
+      "shapes": "[[1, 48, 360]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.025005133333337894,
+      "ws_mb": 0.06591796875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::native_group_norm",
+      "shapes": "[[1, 48, 360], [48], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.023234966666695264,
+      "ws_mb": 0.06591796875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::t",
+      "shapes": "[[384, 128]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.02105166666670411,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[384], [10, 48], [48, 384]]",
+      "calls_per_scan": 0.5,
+      "ms_per_scan": 0.019366233333325603,
+      "ws_mb": 0.0703125,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[128], [1, 140], [140, 128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.018667966666644737,
+      "ws_mb": 0.068359375,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::transpose",
+      "shapes": "[[384, 128]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.017522366666688566,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 32, 1, 40], [48, 32, 1, 3], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.016841233333357502,
+      "ws_mb": 0.017578125,
+      "class": "compute"
+     }
+    ]
+   },
+   "params": {
+    "total": 488753,
+    "pair_encoder": 127760,
+    "imu_encoder": 73616,
+    "measure": 18435,
+    "inp": 36864,
+    "cells": 198144,
+    "gain_head": 8581,
+    "residual_head": 8451,
+    "bias_head": 8451,
+    "logvar_head": 8451
+   },
+   "hybrid": true,
+   "icp": {
+    "iterations": 4,
+    "deskew_passes": 1,
+    "map_iterations": 2,
+    "submap_keyframes": 3
+   }
+  },
+  "no_icp_pure_network": {
+   "knobs": {
+    "hybrid": false
+   },
+   "wall_ms": {
+    "n": 239,
+    "mean": 7.9428510181216145,
+    "p50": 7.490806980058551,
+    "p95": 12.415712478104979,
+    "p99": 16.066592091228816,
+    "max": 21.806639968417585
+   },
+   "components_ms": {
+    "prep": {
+     "n": 239,
+     "mean": 1.1176370755500438,
+     "p50": 0.9147829841822386,
+     "p95": 1.982279331423342,
+     "p99": 3.2987757446244377,
+     "max": 13.327740132808685
+    },
+    "icp_scan": {
+     "n": 239,
+     "mean": 0.0,
+     "p50": 0.0,
+     "p95": 0.0,
+     "p99": 0.0,
+     "max": 0.0
+    },
+    "icp_map": {
+     "n": 239,
+     "mean": 0.0,
+     "p50": 0.0,
+     "p95": 0.0,
+     "p99": 0.0,
+     "max": 0.0
+    },
+    "icp_other": {
+     "n": 239,
+     "mean": 0.0,
+     "p50": 0.0,
+     "p95": 0.0,
+     "p99": 0.0,
+     "max": 0.0
+    },
+    "network": {
+     "n": 239,
+     "mean": 5.289946756302282,
+     "p50": 4.866245901212096,
+     "p95": 8.807558845728636,
+     "p99": 10.812496808357539,
+     "max": 15.614129020832479
+    },
+    "post": {
+     "n": 239,
+     "mean": 0.4961476705103302,
+     "p50": 0.42660103645175695,
+     "p95": 0.9078864473849535,
+     "p99": 1.2887263810262084,
+     "max": 1.5672750305384398
+    },
+    "glue": {
+     "n": 239,
+     "mean": 1.0391195157589586,
+     "p50": 0.9138131281360984,
+     "p95": 1.815037289634346,
+     "p99": 3.0592835345305516,
+     "max": 4.260329180397093
+    }
+   },
+   "imu_callback_us": {
+    "c0": 12.775994971497243,
+    "c1_per_sample": 3.13740240568692,
+    "points": [
+     [
+      0.0,
+      13.309938367456198
+     ],
+     [
+      5.0,
+      28.649927116930485
+     ],
+     [
+      10.0,
+      44.62245851755142
+     ],
+     [
+      15.0,
+      60.254998970776796
+     ],
+     [
+      20.0,
+      74.96500620618463
+     ],
+     [
+      25.0,
+      89.2970128916204
+     ],
+     [
+      30.0,
+      105.63497198745608
+     ],
+     [
+      40.0,
+      140.3969945386052
+     ]
+    ]
+   },
+   "census": {
+    "scans": 30,
+    "components": {
+     "prep": {
+      "top_ops": 13.0,
+      "nested_ops": 10.0,
+      "mflop": 0.00036,
+      "ms": {
+       "small": 0.07942313333334541
+      }
+     },
+     "icp_scan": {
+      "top_ops": 0.0,
+      "nested_ops": 0.0,
+      "mflop": 0.0,
+      "ms": {}
+     },
+     "icp_map": {
+      "top_ops": 0.0,
+      "nested_ops": 0.0,
+      "mflop": 0.0,
+      "ms": {}
+     },
+     "icp_other": {
+      "top_ops": 0.0,
+      "nested_ops": 0.0,
+      "mflop": 0.0,
+      "ms": {}
+     },
+     "network": {
+      "top_ops": 403.0,
+      "nested_ops": 1453.0,
+      "mflop": 2.1513927333333336,
+      "ms": {
+       "small": 3.6833375333332734,
+       "compute": 0.8064369999999603,
+       "mem_cache": 0.6091253333333653
+      }
+     },
+     "post": {
+      "top_ops": 45.0,
+      "nested_ops": 27.0,
+      "mflop": 0.006484,
+      "ms": {
+       "small": 0.21511796666667787
+      }
+     },
+     "glue": {
+      "top_ops": 136.0,
+      "nested_ops": 93.0,
+      "mflop": 0.000329,
+      "ms": {
+       "small": 0.5357022000000082
+      }
+     }
+    },
+    "max_ws_bytes": 196608.0,
+    "heavy_ops": [
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[384], [1, 128], [128, 384]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.20506563333336986,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 64, 1, 184], [96, 64, 1, 5], [96]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.1730883333333244,
+      "ws_mb": 0.1171875,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 48, 1, 364], [64, 48, 1, 5], [64]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.16247526666665085,
+      "ws_mb": 0.066650390625,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 96, 1, 92], [128, 96, 1, 3], [128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.10846710000000534,
+      "ws_mb": 0.140625,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 8, 1, 366], [48, 8, 1, 7], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.0750734666666785,
+      "ws_mb": 0.01116943359375,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::gru_cell",
+      "shapes": "[[1, 128], [1, 128], [384, 128], [384, 128], [384], [384]]",
+      "calls_per_scan": 2.0,
+      "ms_per_scan": 0.042931366666666686,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::linear",
+      "shapes": "[[1, 128], [384, 128], [384]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.04004643333331724,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[128], [1, 288], [288, 128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.03986816666666134,
+      "ws_mb": 0.140625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::silu",
+      "shapes": "[[1, 48, 360]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.025888566666669,
+      "ws_mb": 0.06591796875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[128], [1, 275], [275, 128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.024465500000010916,
+      "ws_mb": 0.13427734375,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::_convolution",
+      "shapes": "[[1, 8, 366], [48, 8, 7], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.02339243333332058,
+      "ws_mb": 0.01116943359375,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::native_group_norm",
+      "shapes": "[[1, 48, 360], [48], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.022945299999993823,
+      "ws_mb": 0.06591796875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::t",
+      "shapes": "[[384, 128]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.02149529999998873,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 6, 1, 40], [32, 6, 1, 3], [32]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.02092796666665569,
+      "ws_mb": 0.002197265625,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 128, 1, 9], [32, 128, 1, 1], [32]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.019345400000002396,
+      "ws_mb": 0.015625,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[384], [10, 48], [48, 384]]",
+      "calls_per_scan": 0.5,
+      "ms_per_scan": 0.019204233333332255,
+      "ws_mb": 0.0703125,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::transpose",
+      "shapes": "[[384, 128]]",
+      "calls_per_scan": 15.066666666666666,
+      "ms_per_scan": 0.0186549666666729,
+      "ws_mb": 0.1875,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::_slow_conv2d_forward",
+      "shapes": "[[1, 32, 1, 40], [48, 32, 1, 3], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.017961599999995755,
+      "ws_mb": 0.017578125,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[128], [1, 128], [128, 128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.01742836666667384,
+      "ws_mb": 0.0625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::_convolution",
+      "shapes": "[[1, 6, 40], [32, 6, 3], [32]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.01597206666666807,
+      "ws_mb": 0.002197265625,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::addmm",
+      "shapes": "[[384], [11, 48], [48, 384]]",
+      "calls_per_scan": 0.4,
+      "ms_per_scan": 0.01589363333333155,
+      "ws_mb": 0.0703125,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::_convolution",
+      "shapes": "[[1, 64, 184], [96, 64, 5], [96]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.015332299999991238,
+      "ws_mb": 0.1171875,
+      "class": "compute"
+     },
+     {
+      "component": "network",
+      "op": "aten::linear",
+      "shapes": "[[1, 1, 128], [128, 128], [128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.013652800000003847,
+      "ws_mb": 0.0625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::linear",
+      "shapes": "[[1, 288], [128, 288], [128]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.012560633333338289,
+      "ws_mb": 0.140625,
+      "class": "mem_cache"
+     },
+     {
+      "component": "network",
+      "op": "aten::convolution",
+      "shapes": "[[1, 8, 366], [48, 8, 7], [48]]",
+      "calls_per_scan": 1.0,
+      "ms_per_scan": 0.011879433333335144,
+      "ws_mb": 0.01116943359375,
+      "class": "compute"
+     }
+    ]
+   },
+   "params": {
+    "total": 485681,
+    "pair_encoder": 127760,
+    "imu_encoder": 73616,
+    "measure": 16899,
+    "inp": 35328,
+    "cells": 198144,
+    "gain_head": 8581,
+    "residual_head": 8451,
+    "bias_head": 8451,
+    "logvar_head": 8451
+   },
+   "hybrid": false,
+   "icp": null
+  }
+ },
+ "reference_us": {
+  "before": 39.853861679394825,
+  "after": 41.50151665494123,
+  "drift": 0.041342417174049295
+ }
+}

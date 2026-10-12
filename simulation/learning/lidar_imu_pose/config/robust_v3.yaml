@@ -1,0 +1,17 @@
+# Per-run perturbations of dataset v3 (robustness.py). Dataset v3 already
+# carries the widened APEX_real profile natively (datasheet gyro bias, warm-up
+# drift, per-power-up stamp offsets of std 3 ms per sensor, reception jitter,
+# 0.5 % IMU losses, 1 % lost revolutions), so no bias top-up and no thermal
+# term here: only the arrival defects beyond the profile.
+profile: APEX_real
+thermal: false
+gyro_bias_topup_std: [0.0, 0.0, 0.0]
+accel_bias_topup_std: [0.0, 0.0, 0.0]
+imu_offset_ms: [-8.0, 8.0]    # on top of the profile draws (IMU vs LiDAR up to ~+-15 ms)
+imu_jitter_std_ms: [0.0, 1.0]
+imu_dropout_prob: [0.0, 0.02]
+imu_burst_prob: [0.0, 0.002]
+imu_burst_len: [2, 4]
+imu_half_rate_prob: 0.25      # 52 Hz: a firmware that does not reach 104 Hz (today's car runs at 55.6 Hz)
+scan_dropout_prob: [0.0, 0.02]
+seed: 103

@@ -52,8 +52,9 @@ import torch  # noqa: E402
 from live_odometry import Estimate, LidarCalibration, LiveOdometry  # noqa: E402
 from pose_dataset.sensors import load_sensor_profiles  # noqa: E402
 from sqlite_windows import imu_group_delay_s  # noqa: E402
+from standstill import StandstillConfig  # noqa: E402
 
-DEFAULT_CKPT = HERE.parent / "outputs" / "real2sim_v2_fast" / "hybrid_submap_v3" / "best_model.pt"  # latest trained (fast-motion correction)
+DEFAULT_CKPT = HERE.parent / "outputs" / "real2sim_v7e_standstill" / "hybrid_submap_v4" / "best_model.pt"  # v5 fine-tuned to stand still (README §16); v5 itself is real2sim_v5_10hz
 
 
 def _stamp(t_ns: int) -> TimeMsg:
@@ -71,6 +72,8 @@ class LearnedOdometryNode(Node):
         # launches, 3x3 solves): ~20 ms per scan with 4 threads vs ~110 ms.
         dp("device", "cpu")
         dp("num_threads", 4)
+        dp("icp_backend", "")  # "polar": compiled nearest-neighbour search (polar_icp.py, same estimates); "": the checkpoint's
+        dp("net_backend", "")  # "onnx": the network run by ONNX Runtime (onnx_net.py, <checkpoint>.onnx, same estimates); "": PyTorch
         dp("imu_wait_s", 0.03)
         dp("imu_topic", "/apex/imu/data_raw")
         dp("scan_topic", "/lidar/scan_raw")
@@ -83,6 +86,15 @@ class LearnedOdometryNode(Node):
         dp("laser_frame", "laser")
         dp("publish_tf", True)
         dp("ready_scans", 10)  # estimates before the pose is declared usable (IMU bias settling at rest)
+        # Standing still is outside the network's training distribution and it
+        # invents forward motion there -- 7 m/min on a parked stream, measured
+        # offline with tools/analysis/standstill_drift.py. While the classical
+        # ICP confirms a standstill its increment is used instead and the
+        # network is not stepped at all (standstill.py).
+        dp("standstill_hold", True)
+        dp("standstill_confirm_scans", StandstillConfig.confirm_scans)
+        dp("standstill_max_step_m", StandstillConfig.max_step_m)
+        dp("standstill_min_eig_ratio", StandstillConfig.min_eig_ratio)
         dp("log_csv", "")
         gp = lambda n: self.get_parameter(n).value  # noqa: E731
         prof = load_sensor_profiles(Path(str(gp("sensors_yaml"))))[str(gp("sensor_profile"))]
@@ -92,8 +104,11 @@ class LearnedOdometryNode(Node):
         torch.backends.cuda.matmul.allow_tf32 = True  # as in training / evaluation (the ICP forces FP32 itself)
         torch.backends.cudnn.allow_tf32 = True
         ckpt = str(gp("checkpoint"))
+        still = StandstillConfig(enable=bool(gp("standstill_hold")), confirm_scans=int(gp("standstill_confirm_scans")),
+                                 max_step_m=float(gp("standstill_max_step_m")), min_eig_ratio=float(gp("standstill_min_eig_ratio")))
         self.odo = LiveOdometry(ckpt, self.cal, device=str(gp("device")), imu_wait_s=float(gp("imu_wait_s")), imu_rate_hz=self.imu_rate,
-                                imu_group_delay_s=imu_group_delay_s(prof["imu"]))
+                                imu_group_delay_s=imu_group_delay_s(prof["imu"]), icp_backend=str(gp("icp_backend")), net_backend=str(gp("net_backend")),
+                                standstill=still)
         self._warmup(ckpt)
         self.odom_frame, self.base_frame, self.laser_frame = str(gp("odom_frame")), str(gp("base_frame")), str(gp("laser_frame"))
         self.publish_tf = bool(gp("publish_tf"))
@@ -121,15 +136,18 @@ class LearnedOdometryNode(Node):
             self._log_file = open(str(gp("log_csv")), "w", newline="", encoding="utf-8")
             self.log = csv.writer(self._log_file)
             self.log.writerow(["stamp_ns", "x", "y", "yaw", "dx", "dy", "dyaw", "sx", "sy", "syaw", "vx", "vy", "bias_gz", "bias_ax", "bias_ay",
-                               "dt", "imu_samples", "icp_standstill", "icp_map_used", "compute_ms", "latency_ms"])
+                               "dt", "imu_samples", "icp_standstill", "icp_map_used", "standstill_hold", "compute_ms", "latency_ms"])
         self.get_logger().info(
-            f"learned odometry: {Path(ckpt).parent.name}/{Path(ckpt).name} ({'hybrid ' + str(self.odo.icp_cfg.submap_keyframes) + '-keyframe submap ICP' if self.odo.hybrid else 'pure network'}) "
+            f"learned odometry: {Path(ckpt).parent.name}/{Path(ckpt).name} ({'hybrid ' + str(self.odo.icp_cfg.submap_keyframes) + '-keyframe submap ICP, ' + self.odo.icp_cfg.association + ' search' if self.odo.hybrid else 'pure network'}, network on {'ONNX Runtime' if hasattr(self.odo.model, 'session') else 'PyTorch'}) "
             f"on {self.odo.device}; LiDAR {self.cal.rate_hz} Hz {self.cal.scan_direction} from {self.cal.scan_start_angle_deg} deg, IMU {self.imu_rate} Hz")
 
     def _warmup(self, ckpt: str) -> None:
         """One synthetic interval on a throw-away instance (CUDA kernels, cuDNN plans)."""
         t0 = time.perf_counter()
-        tmp = LiveOdometry(ckpt, self.cal, device=str(self.odo.device), imu_wait_s=0.0)
+        # The hold is off here on purpose: these synthetic intervals are a
+        # standstill, and the whole point of the warm-up is to run the network.
+        tmp = LiveOdometry(ckpt, self.cal, device=str(self.odo.device), imu_wait_s=0.0, icp_backend=str(self.get_parameter("icp_backend").value),
+                           net_backend=str(self.get_parameter("net_backend").value), standstill=StandstillConfig(enable=False))
         ranges = np.full(self.cal.beams, 3.0, dtype=np.float32)
         for k in range(3):
             base = k * 80_000_000
@@ -200,7 +218,8 @@ class LearnedOdometryNode(Node):
             if self.log is not None:
                 self.log.writerow([e.stamp_ns, *[f"{v:.6f}" for v in e.pose], *[f"{v:.6f}" for v in e.delta], *[f"{v:.6g}" for v in e.sigma],
                                    *[f"{v:.4f}" for v in e.velocity], *[f"{v:.6f}" for v in e.bias], f"{e.dt:.5f}", e.imu_samples,
-                                   e.icp.get("standstill", ""), e.icp.get("map_used", ""), f"{e.compute_ms:.2f}", f"{lat:.2f}"])
+                                   e.icp.get("standstill", ""), e.icp.get("map_used", ""), e.icp.get("hold", ""),
+                                   f"{e.compute_ms:.2f}", f"{lat:.2f}"])
 
     def _odom(self, pub, t_ns: int, pose: np.ndarray, v: np.ndarray, sigma, yaw_rate: float = 0.0) -> None:  # noqa: ANN001
         o = Odometry()
@@ -223,7 +242,8 @@ class LearnedOdometryNode(Node):
         payload = {"ready": self.odo.scans >= self.ready_scans, "scans": self.odo.scans, "pending": len(self.odo._pending),
                    "latency_ms_p50": float(np.median(lat)), "latency_ms_p95": float(np.percentile(lat, 95)),
                    "compute_ms_p50": float(np.median(comp)), "compute_ms_p95": float(np.percentile(comp, 95)),
-                   "bias": self.odo.bias.tolist(), "velocity": self.odo.velocity.tolist(), "health": health}
+                   "bias": self.odo.bias.tolist(), "velocity": self.odo.velocity.tolist(), "health": health,
+                   "standstill": self.odo.hold.status()}
         self.status_pub.publish(String(data=json.dumps(payload)))
         for w in health.get("warnings", []):
             self.get_logger().warn(w, throttle_duration_sec=10.0)

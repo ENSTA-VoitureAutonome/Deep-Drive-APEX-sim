@@ -10,7 +10,9 @@ world, in seconds instead of Gazebo at a real-time factor of 0.5:
 * **LiDAR**: exact ray casting of the track geometry at the scan plane
   (curbs below it are not seen), 360 beams at 13 Hz, the rear sector
   145-205 deg occluded, range noise and dropouts; delivered with the
-  estimator latency.
+  estimator latency (``--scan-hz``, default 10 Hz). ``--lidar-sample-hz`` keeps only the one-degree bins
+  hit by the device samples of a revolution (A2M8: 4000 in Express scan,
+  ~307 of 360 bins at 13 Hz), ``--dropout`` sets the missing-return rate.
 * **Odometry**: the true motion with a scale error and a heading drift (the
   magnitudes of the learned odometry), plus noise.
 * **SLAM**: ``map -> odom`` brings the odometry back to the truth with a few
@@ -49,9 +51,10 @@ from apex_fusion_research.nodes._pose_tools import run_setup  # noqa: E402
 from pose_dataset.controller import PurePursuit  # noqa: E402
 from pose_dataset.geometry import FootprintChecker, rect_corners  # noqa: E402
 from pose_dataset.raycast import RayCaster  # noqa: E402
-from pose_dataset.vehicle import Actuators  # noqa: E402
+from pose_dataset.vehicle import Actuators, draw_plant_mismatch  # noqa: E402
 
-BEAMS, SCAN_HZ, LIDAR_Z = 360, 13.03, 0.12
+BEAMS, LIDAR_Z = 360, 0.12
+SCAN_HZ = 10.0  # revolution rate (sensors.yaml APEX_real; --scan-hz)
 
 
 class MapBuilder:
@@ -97,7 +100,8 @@ class MapBuilder:
         return Grid(data, self.res, self.ox, self.oy)
 
 
-def run_one(track_name: str, motion: str, seed: int, laps: int, cfg: RaceDriverConfig, out_dir: Path | None, max_sim_s: float) -> dict:
+def run_one(track_name: str, motion: str, seed: int, laps: int, cfg: RaceDriverConfig, out_dir: Path | None, max_sim_s: float,
+            sample_hz: float = 0.0, dropout: float = 0.03, plant_scale: float = 1.0) -> dict:
     rs = run_setup(track_name, motion, seed, laps)
     track, vcfg = rs["track"], rs["vcfg"]
     rng = np.random.default_rng(1000 + seed)
@@ -105,7 +109,17 @@ def run_one(track_name: str, motion: str, seed: int, laps: int, cfg: RaceDriverC
     caster = RayCaster(track.geometry, max_range=12.0)
     checker = FootprintChecker(track.geometry)
     truth_tt = TrueTrack(track, veh)
-    act = Actuators(vcfg, rs["setup"]["actuator_perturbation"])
+    # The plant of this run. The car is told vehicle.yaml; what it is actually
+    # driving is drawn here, exactly as the Gazebo launch draws it, and the
+    # driver is never told. Without this the harness would be circular: it used
+    # to move the real car with the wheelbase the controller *believes*.
+    plant = draw_plant_mismatch(np.random.default_rng(90000 + seed), plant_scale)
+    act = Actuators(vcfg, {**rs["setup"]["actuator_perturbation"], **plant})
+    p_wheelbase = float(plant["wheelbase_m"])
+    p_rear = float(plant["rear_axle_offset_x"])
+    p_laser_x = 0.18 + float(plant["lidar_extra_x"])
+    p_report_x = float(plant["lidar_extra_x"])  # the point the estimator calls base_link
+    p_decode = float(plant["decode_wheelbase_m"])
     ref_locator = PurePursuit(rs["setup"]["path"], veh.wheelbase_m, vcfg["controller"], 1.0)
     lap_len = rs["setup"]["path"].length
     # truth: base_link pose
@@ -115,6 +129,10 @@ def run_one(track_name: str, motion: str, seed: int, laps: int, cfg: RaceDriverC
     scale_err = float(rng.choice([-1, 1])) * 0.008
     drift = float(rng.choice([-1, 1])) * math.radians(0.06)
     odom = (0.0, 0.0, 0.0)
+    # Per-increment sigma the trained network publishes with each estimate.
+    odo_sigma = (0.0032, 0.0032, 0.0009)
+    v_report, next_report = 0.0, 0.1
+    report_prev = None
     angles = -math.pi + 2 * math.pi / BEAMS * np.arange(BEAMS)
     occluded = (np.degrees(angles) % 360 > 145) & (np.degrees(angles) % 360 < 205)
     track_xy = track.centerline.xy
@@ -137,20 +155,24 @@ def run_one(track_name: str, motion: str, seed: int, laps: int, cfg: RaceDriverC
     t_wall0 = time.perf_counter()
     v_true = 0.0
     a_body = 0.0
+    prev_steer_deg = 0.0
     while t < max_sim_s:
         # --- truth motion (rear-axle bicycle)
         act.step(dt)
         a_body += (dt / 0.1) * ((act.speed - v_true) / dt - a_body)  # longitudinal acceleration, 0.1 s lag
         v_true = act.speed
         delta = math.radians(act.steer_deg)
-        rear = (bx + veh.rear_offset_m * math.cos(byaw), by + veh.rear_offset_m * math.sin(byaw))
-        w = v_true * math.tan(delta) / veh.wheelbase_m
+        rear = (bx + p_rear * math.cos(byaw), by + p_rear * math.sin(byaw))
+        w = v_true * math.tan(delta) / p_wheelbase
         mid = byaw + 0.5 * w * dt
         rear = (rear[0] + v_true * dt * math.cos(mid), rear[1] + v_true * dt * math.sin(mid))
         new_yaw = byaw + w * dt
-        nbx, nby = rear[0] - veh.rear_offset_m * math.cos(new_yaw), rear[1] - veh.rear_offset_m * math.sin(new_yaw)
-        # odometry increment with its errors
-        inc = se2_compose(se2_inverse((bx, by, byaw)), (nbx, nby, new_yaw))
+        nbx, nby = rear[0] - p_rear * math.cos(new_yaw), rear[1] - p_rear * math.sin(new_yaw)
+        # Odometry increment, of the point the estimator reports (the laser pose
+        # minus the *nominal* mount), which is what carries the lever arm.
+        here = (bx + p_report_x * math.cos(byaw), by + p_report_x * math.sin(byaw), byaw)
+        there = (nbx + p_report_x * math.cos(new_yaw), nby + p_report_x * math.sin(new_yaw), new_yaw)
+        inc = se2_compose(se2_inverse(here), there)
         dist = math.hypot(inc[0], inc[1])
         odom = se2_compose(odom, (inc[0] * (1 + scale_err), inc[1] * (1 + scale_err), inc[2] + drift * dist + rng.normal(0, 2e-5)))
         bx, by, byaw = nbx, nby, new_yaw
@@ -169,7 +191,7 @@ def run_one(track_name: str, motion: str, seed: int, laps: int, cfg: RaceDriverC
         # --- LiDAR revolution at 13 Hz, delivered with the estimator latency
         if t >= next_scan:
             next_scan += 1.0 / SCAN_HZ
-            lx, ly = bx + 0.18 * math.cos(byaw), by + 0.18 * math.sin(byaw)
+            lx, ly = bx + p_laser_x * math.cos(byaw), by + p_laser_x * math.sin(byaw)
             dirs = np.column_stack((np.cos(angles + byaw), np.sin(angles + byaw), np.zeros(BEAMS)))
             r = caster.cast(np.tile([lx, ly, LIDAR_Z], (BEAMS, 1)), dirs, 12.0)
             # Body pitch on the suspension (0.6 deg per m/s^2, nose down when braking): the laser plane hits the floor.
@@ -177,7 +199,13 @@ def run_one(track_name: str, motion: str, seed: int, laps: int, cfg: RaceDriverC
             floor = np.where(slope > 1e-4, LIDAR_Z / np.maximum(slope, 1e-4), np.inf)
             r = np.minimum(r, floor)
             r = r + rng.normal(0, 1, BEAMS) * (0.001 + 0.003 * np.where(np.isfinite(r), r, 0))
-            r[occluded | (rng.random(BEAMS) < 0.03) | (r < 0.15)] = np.inf
+            if sample_hz > 0.0:  # bins without a device sample in this revolution
+                step = 360.0 * SCAN_HZ / sample_hz
+                hit = np.zeros(BEAMS, dtype=bool)
+                ang = rng.uniform(0.0, step) + step * np.arange(int(360.0 / step) + 1)
+                hit[(ang[ang < 360.0]).astype(int)] = True
+                r[~hit] = np.inf
+            r[occluded | (rng.random(BEAMS) < dropout) | (r < 0.15)] = np.inf
             self_hit = (np.abs(np.degrees(angles) - 97.5) < 1.0) & (rng.random(BEAMS) < 0.45)  # the car's own wheel (as in Gazebo)
             r[self_hit] = 0.155
             u = rng.random(BEAMS)  # spurious returns, harsh sensor profile (sensors.yaml): short 1 %, random 0.6 %
@@ -188,9 +216,20 @@ def run_one(track_name: str, motion: str, seed: int, laps: int, cfg: RaceDriverC
             scan_queue.append((t + 0.15, t, r, odom))
             slam_pose = se2_compose(truth_map, (0.18, 0.0, 0.0))
             mb.add(slam_pose, r, angles)
+        # The estimate of one revolution, with its sigma, as the node delivers
+        # it: this is the only measurement the identification may use.
+        if t >= next_report:
+            next_report += 0.1
+            noisy = se2_compose(odom, tuple(rng.normal(0.0, odo_sigma)))
+            odom = noisy
+            if report_prev is not None:
+                step = se2_compose(se2_inverse(report_prev), noisy)
+                v_report = math.copysign(math.hypot(step[0], step[1]), step[0] if abs(step[0]) > 1e-9 else 1.0) / 0.1
+            report_prev = noisy
+            core.on_odometry(t, noisy, odo_sigma, True)
         while scan_queue and scan_queue[0][0] <= t:
             _, stamp, r, od = scan_queue.pop(0)
-            core.on_scan(stamp, r, -math.pi, 2 * math.pi / BEAMS, od, odom, v_true)
+            core.on_scan(stamp, r, -math.pi, 2 * math.pi / BEAMS, od, odom, v_report)
         if t >= next_map:
             next_map += 0.5
             if core.phase in ("closing", "planning"):
@@ -199,10 +238,20 @@ def run_one(track_name: str, motion: str, seed: int, laps: int, cfg: RaceDriverC
         # --- control at 50 Hz
         if t >= next_ctrl:
             next_ctrl += 0.02
-            v_cmd, steer, row = core.control(t, odom, v_true, map_odom_raw, True, 0.0)
-            act.set_command(v_cmd, math.degrees(core.steer_command(steer)))
+            v_cmd, steer, row = core.control(t, odom, v_report, map_odom_raw, True, 0.0)
+            # Through the real command channel: the driver publishes a Twist and
+            # the actuation recovers the steering with the wheelbase *it*
+            # assumes, which is not the one the driver assumes.
+            v_pub, kappa_pub = core.cmd_out
+            # Below that speed a Twist carries no steering at all (angular.z
+            # goes to zero with the speed), so the servo holds, as it does on
+            # the car and in sim_actuation_node.
+            if abs(v_pub) > 0.02:
+                prev_steer_deg = math.degrees(math.atan(p_decode * kappa_pub))
+            steer_deg = prev_steer_deg
+            act.set_command(v_pub, steer_deg)
             log_rows.append(row)
-            s_true, lat = ref_locator.locate(bx + veh.rear_offset_m * math.cos(byaw), by + veh.rear_offset_m * math.sin(byaw))
+            s_true, lat = ref_locator.locate(bx + p_rear * math.cos(byaw), by + p_rear * math.sin(byaw))
             truth_rows.append((t, bx, by, byaw, v_true, s_true, core.phase))
             clr = truth_tt.clear(bx, by, byaw)
             min_clr = min(min_clr, clr) if t_move else min_clr
@@ -227,7 +276,9 @@ def run_one(track_name: str, motion: str, seed: int, laps: int, cfg: RaceDriverC
     wall_s = time.perf_counter() - t_wall0
     res = {"track": track_name, "motion": motion, "seed": seed, "laps": laps, "status": verdict, "failure_reason": reason, "t_end_s": t,
            "wall_s": wall_s, "true_progress_m": float(ref_locator.s_total), "lap_len_m": lap_len, "min_true_clearance_m": min_clr,
-           "odometry": {"scale_err": scale_err, "drift_deg_per_m": math.degrees(drift)}}
+           "odometry": {"scale_err": scale_err, "drift_deg_per_m": math.degrees(drift)},
+           "plant_true": {**plant, "plant_scale": plant_scale, "arm_true_m": p_report_x - p_rear},
+           "adaptation": core.adaptation()}
     t0 = t_move or 0.0
     marks = [t0] + lap_marks
     res["true_lap_times_s"] = [b - a for a, b in zip(marks, marks[1:])]
@@ -311,6 +362,7 @@ def figure(path: Path, track, tr: np.ndarray, phases: np.ndarray, core: RaceDriv
 
 
 def main() -> None:
+    global SCAN_HZ
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--track", default="test_unseen")
     ap.add_argument("--motion", default="medium", help="only seeds the spawn / actuator draws of the format")
@@ -320,10 +372,28 @@ def main() -> None:
     ap.add_argument("--max-sim-s", type=float, default=400.0)
     ap.add_argument("--out", type=Path, default=SIM / "data" / "race_harness")
     ap.add_argument("--set", nargs="*", default=[], help="config overrides section.field=value, e.g. reactive.v_explore_mps=1.2")
+    ap.add_argument("--lidar-sample-hz", type=float, default=0.0, help="device samples per second (0: every bin, the historical harness; A2M8 Express: 4000)")
+    ap.add_argument("--dropout", type=float, default=0.03, help="missing-return probability per bin (APEX_real at 4 kHz: 0.12)")
+    ap.add_argument("--scan-hz", type=float, default=SCAN_HZ, help="LiDAR revolution rate (APEX_real: 10; today's car driver: 13.03)")
+    ap.add_argument("--plant-scale", type=float, default=1.0,
+                    help="how far the real plant of each run is drawn from vehicle.yaml (0: exactly the datasheet, 1: as the car may be, 3: three sigma)")
+    ap.add_argument("--vehicle-yaml", type=Path, default=None,
+                    help="the description the DRIVER is given (default: the dataset's vehicle.yaml). The plant it actually drives is still "
+                         "drawn by draw_plant_mismatch, so pointing this at the real car's file tests that car's limits, not its plant.")
+    ap.add_argument("--driver-params", type=Path, default=None,
+                    help="ROS params file of the race driver (apex_race/config/race_driver.yaml): its nested sections are applied like --set")
     a = ap.parse_args()
+    SCAN_HZ = a.scan_hz
     from pose_dataset.vehicle import load_vehicle_config  # noqa: PLC0415
 
-    cfg = RaceDriverConfig(vehicle=vehicle_limits(load_vehicle_config()))
+    cfg = RaceDriverConfig(vehicle=vehicle_limits(load_vehicle_config(a.vehicle_yaml)))
+    if a.driver_params is not None:
+        import yaml  # noqa: PLC0415
+
+        params = yaml.safe_load(a.driver_params.read_text())
+        node = next(iter(params.values())) if "ros__parameters" not in params else params
+        a.set = [f"{sec}.{key}={value}" for sec, values in node["ros__parameters"].items()
+                 if isinstance(values, dict) for key, value in values.items()] + list(a.set)
     cfg.planner.mode = a.race_line
     for item in a.set:
         key, value = item.split("=", 1)
@@ -333,13 +403,19 @@ def main() -> None:
         setattr(obj, field, type(cur)(value) if not isinstance(cur, bool) else value.lower() in ("1", "true", "yes"))
     rows = []
     for seed in a.seeds:
-        r = run_one(a.track, a.motion, seed, a.laps, cfg, a.out, a.max_sim_s)
+        r = run_one(a.track, a.motion, seed, a.laps, cfg, a.out, a.max_sim_s, a.lidar_sample_hz, a.dropout, a.plant_scale)
         rows.append(r)
         pt = r.get("plan_truth", {})
         print(f"seed {seed}: {r['status']:9s} {r['failure_reason']:28s} laps {['%.1f' % x for x in r['true_lap_times_s']]} "
               f"min clr {100 * r['min_true_clearance_m']:.0f} cm (lap1 {100 * r['lap1_true_min_clearance_m']:.0f}, race {100 * r['race_true_min_clearance_m']:.0f}) "
               f"plan: sound {100 * pt.get('corridor_sound_frac', math.nan):.0f} % line clr {100 * pt.get('line_min_clearance_m', math.nan):.0f} cm "
               f"guard {r['guard_events']}  [{r['wall_s']:.0f} s]", flush=True)
+        ad = r.get("adaptation", {})
+        if ad:
+            print(f"        plant: arm {100 * r['plant_true']['arm_true_m']:.1f} cm, steer gain {r['plant_true']['steer_gain']:.2f}, "
+                  f"start {r['plant_true']['stiction_mps']:.2f} m/s, bridge L {r['plant_true']['decode_wheelbase_m']:.3f} m | "
+                  f"found: arm {100 * ad['arm_m']:.1f} cm, gain {ad['gain_left']:.2f}/{ad['gain_right']:.2f}, "
+                  f"trim {ad['trim']:+.3f}, dead {ad['dead_mps']:.2f}, conf {ad['confidence']:.2f}", flush=True)
     (a.out / f"summary_{a.track}.json").write_text(json.dumps(rows, indent=1, default=float), encoding="utf-8")
 
 

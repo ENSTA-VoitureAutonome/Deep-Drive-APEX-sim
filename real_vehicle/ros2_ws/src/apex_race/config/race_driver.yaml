@@ -1,0 +1,145 @@
+# Race driver of the real car: every value that differs from the simulation default.
+#
+# The defaults live in `core/race_config.py` and are the ones Gazebo validated on
+# a 57 m track at 3.5 m/s in a 1.5 m lane. This car drives a 10-15 m indoor loop
+# in a ~1.0 m lane at 0.90 m/s with 12.5 deg of steering, so three families of
+# values have to be rescaled: the speeds, the lane geometry, and the distances
+# the lap counter and the planner assume. Anything not listed here keeps its
+# simulation default on purpose.
+#
+# Decisions of 2026-10-10: speed envelope "option B", symmetric steering
+# +-12.5 deg, lane ~1.0 m, lap 10-15 m.
+apex_race_driver:
+  ros__parameters:
+    laps: 3
+    vehicle_yaml: ""            # set on the command line to config/vehicle_real.yaml
+    rate_hz: 50.0
+    static_start_s: 1.5
+    require_arm: true
+    arm_timeout_s: 0.5
+    # The three freshness gates, ordered on purpose: 0.3 < 0.35 (the bridge's
+    # command watchdog) < 0.6. Whichever input dies, the driver commands a clean
+    # zero at 50 Hz before the bridge's timeout fires -- a commanded zero is
+    # better than a timeout, which also snaps the steering to its zero branch.
+    max_pose_age_s: 0.3
+    max_scan_age_s: 0.6
+    # A de-skewed revolution is stamped at the *start* of its sweep, so by the
+    # time the driver sees it, it already carries the sweep (100 ms) plus the
+    # estimator's latency (p95 185 ms measured on this Pi). 0.25 s therefore
+    # drops healthy scans: in the workstation rehearsal it threw away 801 of
+    # 1013 and the driver never left `explore`. What actually keeps the planner
+    # on the newest revolution is the depth-1 best-effort subscription; this is
+    # only a backstop against a real backlog, so it sits just under
+    # max_scan_age_s, which is the gate that stops the car.
+    scan_stale_s: 0.50
+    core_busy_stop_s: 0.25
+    imu_rate_hz: 100.0          # WT61PC; the health gate refuses identification off-rate
+    lidar_rate_hz: 10.0         # A2M8 Express (measured 9.974 Hz, -0.26 %)
+    planner_in_process: false
+    planner_cpus: [2, 3]
+
+    vehicle:
+      # steer_plan_deg is the steering the planners may use; the rest is the
+      # reserve for the tracking error. The simulation keeps 2 of 18 deg on a
+      # wide track. In a ~1 m corridor that reserve comes straight out of the
+      # corner margin: at 11 deg the lap-1 planner needs a 1.54 m path radius,
+      # and a 1.1 m corridor around a 1.2 m corner only affords 1.49 m, so the
+      # car stopped in every corner (2D harness, zs_real_narrow_oval). At
+      # 12.0 deg (1.41 m) the same seed completes three laps.
+      #
+      # The arithmetic, worth keeping: usable centre band = corridor - 0.514 m
+      # (two footprint circles of 0.177 m plus c_hard 0.08); the largest path
+      # radius through a corner of centreline radius Rc is Rc + band/2; the
+      # steering that needs is atan(0.30 / that). Measured, 3 laps per seed:
+      #   corridor 1.3 m, corners 1.5 m -> 4/4 seeds, clearance 15-20 cm
+      #   corridor 1.1 m, corners 1.5 m -> 3/4
+      #   corridor 1.1 m, corners 1.2 m -> marginal, clearance 4 cm
+      steer_plan_deg: 12.0      # 11.0: see below
+
+    reactive:                   # lap 1, from the LiDAR alone
+      w_min_m: 1.0              # 1.5 -> blind-side bound 1.0 - 0.16 - 0.10 = 0.74 m
+      d_follow_m: 0.50          # 0.75 was beyond the centre of a 1 m lane
+      wall_margin_m: 0.15       # 0.20 -> the car's centre may use [0.31, 0.69] m of the lane
+      c_soft_m: 0.20            # 0.30 was permanently active at 0.34 m of nominal clearance
+      both_max_width_m: 2.0     # 2.8 -> do not pair a lane wall with a far one
+      wall_min_length_m: 1.2    # 1.8 was tuned against 1.66 m decoration boxes on a 57 m track
+      wall_min_points: 12       # 15, scaled with the shorter wall
+      # The candidate grid stays at the simulation's 21 x 11. It was cut to
+      # 15 x 7 for one afternoon, when the reactive step measured 145 ms on the
+      # car against the 100 ms a revolution allows -- but that measurement was
+      # taken while the 5 V rail was browning out and the CPU was being
+      # throttled. On the repaired supply the same step costs 37 ms on average
+      # and 75 ms at worst, with the control tick never once losing its slot,
+      # so the reason for the cut is gone and the car runs what Gazebo
+      # validated. Re-measure before cutting it again.
+      v_explore_mps: 0.70       # 1.5
+      v_min_mps: 0.35           # 0.3, the odometry network's training floor, with margin
+      v_blind_mps: 0.45         # 0.8
+      a_lat_mps2: 0.80          # 1.5
+      a_acc_mps2: 0.60          # 1.0
+      # 1.5 assumed a car that can brake. This one has no active brake
+      # (active_brake_on_zero false), so only motor drag decelerates it: the
+      # lap-1 planner must not drive faster into unknown space than it can coast
+      # to a stop. 1.0 matches esc.decel_limit_mps2 1.2 with margin.
+      a_dec_mps2: 1.00
+      # Proven lane. The rule is "drive no faster than you can stop inside the
+      # part of the path a wall proves is lane", and its two distances are
+      # speed-scaled: `lane_margin_m` is the latency plus one revolution
+      # (0.2 s of estimator latency + 0.1 s of revolution = 0.21 m at 0.70 m/s,
+      # against 0.45 m at the simulation's 1.5 m/s). Left at 0.5 m the rule
+      # demanded 0.81 m of proven lane to cruise, and a 1.2 m corner in a 1.1 m
+      # corridor only ever proves ~0.6 m ahead: the car stopped in every corner
+      # (2D harness, zs_real_narrow_oval seed 7, t = 19.7 s).
+      lane_margin_m: 0.25       # 0.5
+
+    closure:                    # the lap counter, on the car's own map pose
+      arm_distance_m: 6.0       # 20.0; rule: <= 0.6 x the shortest plausible lap (10 m)
+      arm_time_s: 12.0          # 15.0; a 10 m lap at 0.70 m/s takes ~14 s
+      overlap_m: 3.0            # 6.0, driven past the start so the SLAM closes the loop
+      lateral_tol_m: 0.80       # 1.5 was wider than this lane
+      return_radius_m: 1.20     # 2.0
+
+    planner:                    # the race line, on the car's own map
+      # 0.3 m of erosion per side would collapse a ~0.68 m corridor. 0.10 m is
+      # two map cells at 0.05 m resolution.
+      bound_erosion_m: 0.10
+      none_half_width_m: 0.15   # 0.25: where no wall is recognised, stay near the lap-1 path
+      wall_component_min_m: 1.2  # 2.0, matching reactive.wall_min_length_m
+      seam_blend_m: 1.5         # 3.0 was a quarter of a 12 m lap
+
+    race:
+      v_max_mps: 0.90           # 3.5
+      a_lat_mps2: 1.20          # 3.0 -> the lateral limit never binds (sqrt(1.2/0.648) = 1.36 m/s)
+      a_acc_mps2: 0.60          # 1.5
+      a_dec_mps2: 1.20          # 2.0
+      v_tight_base_mps: 0.35    # 1.2  cap = base + gain * corridor width
+      v_tight_gain: 1.5         # 5.0
+      handover_max_lat_m: 0.15  # 0.3 was most of the slack of a 1 m lane
+      guard_drop_m: 0.12        # 0.18
+      finish_margin_m: 0.50     # 1.0
+
+    adaptive:                   # identification of the car's own plant
+      # The gates that decide whether anything is identified at all, lowered to
+      # the speeds this car actually drives (plant_id.py:441,470). Both must sit
+      # *below* the speeds the driver commands, with margin: the lap-1 planner
+      # floors the speed at reactive.v_min_mps 0.35 when the proven lane is
+      # short, and a gate at exactly the floor refuses half of those samples.
+      # The lever arm stays well conditioned at 0.30 because the binding
+      # constraint there is the turn (arm_dyaw_min_rad), not the speed, and the
+      # filter weights every sample by its own propagated variance.
+      v_min_update_mps: 0.30    # 0.5  (the lever arm)
+      v_min_steer_mps: 0.45     # 0.6  (the curvature map)
+      # The two v^2 columns can never be excited below 2 m/s, so they are frozen
+      # instead of being fitted to noise.
+      slip_arm_v_min_mps: 10.0  # 2.0
+      slip_sigma: 1.0e-6        # 0.006
+      recover_creep_mps: 0.35   # 0.3, above the odometry's training floor
+      recover_speed_mps: 0.35   # 0.4 in reverse
+      # Rear clearance required before backing out of a dead end, measured in
+      # the cloud the car already drove through. 0.25 m silently disabled the
+      # reverse on every narrow-corridor stall (2D harness: `recover` stayed 0
+      # through 13 s of standstill; with the gate open it fires): in a 1.1 m
+      # corridor there are always accumulated points inside the 0.31 m half
+      # strip behind the car. What makes the reverse safe is that it is bounded
+      # in distance, in time and in attempts per lap, not this threshold.
+      recover_clearance_m: 0.15  # 0.25

@@ -51,7 +51,21 @@ class SteeringServo:
                     100.0 * self._min_authority_ratio,
                 )
             )
+        # `limit_deg` is the servo's *calibration*, not a limit: it is the angle
+        # reached at the edge of the duty window, so this is the hardware scale
+        # (5.0..10.0 % over +-18 deg = 0.1389 %/deg). Changing it rescales how
+        # far the wheels move per commanded degree.
         self._variation_per_deg = 0.5 * (self._dc_max - self._dc_min) / self._limit_deg
+        # The angle the servo can reach *in both directions*. The window is
+        # [5.0, 10.0] % about a centre of 8.2 % (the mechanical straight-ahead,
+        # 1.64 ms), so it reaches -23.0 deg one way and +12.96 deg the other.
+        # Every planner and tracker in this repository assumes a symmetric
+        # steering authority, so the smaller of the two is the real limit: a
+        # request beyond it is clamped here, and `applied_deg` therefore never
+        # reports an angle the wheels did not take. Before this, a 48 deg
+        # request (logged on the car) was saturated by the duty bounds and
+        # reported back as 23 deg.
+        self._authority_deg = min(self._dc_center - self._dc_min, self._dc_max - self._dc_center) / self._variation_per_deg
         self._requested_angle_deg = 0.0
         self._pre_sign_angle_deg = 0.0
         self._post_sign_angle_deg = 0.0
@@ -72,7 +86,9 @@ class SteeringServo:
 
     def set_angle_deg(self, angle_deg: float) -> None:
         self._requested_angle_deg = float(angle_deg)
-        requested_angle_deg = self._requested_angle_deg
+        # Clamp what was *asked for*, not only the duty it computes: see
+        # `_authority_deg`.
+        requested_angle_deg = max(-self._authority_deg, min(self._authority_deg, self._requested_angle_deg))
         signed_angle_deg = requested_angle_deg * self._direction_sign
         duty_cycle = self._dc_center + signed_angle_deg * self._variation_per_deg
         duty_cycle = max(self._dc_min, min(self._dc_max, duty_cycle))
@@ -98,8 +114,14 @@ class SteeringServo:
     def get_pwm_state(self) -> dict[str, float | int | str | None]:
         return self._pwm.get_state()
 
+    @property
+    def authority_deg(self) -> float:
+        """Angle reachable in *both* directions; a pre-flight asserts this."""
+        return self._authority_deg
+
     def get_state(self) -> dict[str, float]:
         return {
+            "authority_deg": self._authority_deg,
             "requested_deg": self._requested_angle_deg,
             "pre_sign_deg": self._pre_sign_angle_deg,
             "post_sign_deg": self._post_sign_angle_deg,
@@ -131,8 +153,17 @@ class MaverickESCMotor:
         backend: str = "sysfs_pwm",
         node=None,
         publish_topic: str = "",
+        async_reverse: bool = False,
+        clock=None,
     ) -> None:
         self._logger = logger
+        # Non-blocking direction changes, driven by `tick()`. Opt-in so the
+        # legacy stack keeps the behaviour it was validated with.
+        self._async_reverse = bool(async_reverse)
+        self._clock = clock or time.monotonic
+        self._phase = "fwd"  # fwd | brake | neutral | rev | exit
+        self._phase_until: float | None = None
+        self._requested_pct = 0.0
         self._dc_min = float(dc_min)
         self._dc_max = float(dc_max)
         self._neutral_dc = float(neutral_dc)
@@ -155,31 +186,88 @@ class MaverickESCMotor:
         self._speed_pct = 0.0
         self._last_duty_cycle_pct = self._neutral_dc
 
-    def set_speed_pct(self, speed_pct: float) -> None:
-        self._speed_pct = max(-100.0, min(100.0, float(speed_pct)))
+    def _duty_for(self, speed_pct: float) -> float:
+        if abs(speed_pct) < 1.0:
+            return self._neutral_dc
+        if speed_pct > 0.0:
+            return self._neutral_dc + ((speed_pct / 100.0) * (self._dc_max - self._neutral_dc))
+        return self._neutral_dc + ((speed_pct / 100.0) * (self._neutral_dc - self._dc_min))
 
+    def _write(self, duty_cycle: float) -> None:
+        self._pwm.set_duty_cycle(duty_cycle)
+        self._last_duty_cycle_pct = duty_cycle
+
+    def set_speed_pct(self, speed_pct: float) -> None:
+        pct = max(-100.0, min(100.0, float(speed_pct)))
+        if self._async_reverse:
+            self._requested_pct = pct
+            self._advance()
+            return
+
+        self._speed_pct = pct
         if self._speed_pct < 0.0 and not self._in_reverse_mode:
             self._enter_reverse_mode()
         elif self._speed_pct >= 0.0 and self._in_reverse_mode:
             self._exit_reverse_mode()
 
-        if abs(self._speed_pct) < 1.0:
-            duty_cycle = self._neutral_dc
-        elif self._speed_pct > 0.0:
-            duty_cycle = self._neutral_dc + (
-                (self._speed_pct / 100.0) * (self._dc_max - self._neutral_dc)
-            )
-        else:
-            duty_cycle = self._neutral_dc + (
-                (self._speed_pct / 100.0) * (self._neutral_dc - self._dc_min)
-            )
-
-        self._pwm.set_duty_cycle(duty_cycle)
-        self._last_duty_cycle_pct = duty_cycle
+        duty_cycle = self._duty_for(self._speed_pct)
+        self._write(duty_cycle)
         self._logger.debug(
             "Motor command %.1f%% -> duty cycle %.3f%% (reverse=%s)"
             % (self._speed_pct, duty_cycle, self._in_reverse_mode)
         )
+
+    def tick(self) -> None:
+        """Advance the non-blocking reverse sequence; a no-op in blocking mode.
+
+        The caller must invoke this every control cycle when ``async_reverse``
+        is set, otherwise a reverse request stalls in its brake phase.
+        """
+        if self._async_reverse:
+            self._advance()
+
+    def _advance(self) -> None:
+        """One step of the ESC's direction-change sequence, without sleeping.
+
+        A Maverick ESC has to be walked through brake and neutral before it
+        accepts reverse. The blocking version of this does
+        ``sleep(0.12) + sleep(0.12)`` on entry and ``sleep(0.15)`` on exit --
+        inside the control callback, which freezes the steering for a quarter of
+        a second every time the driver's recovery reverses. Here the same
+        sequence is a phase machine driven by the control timer.
+        """
+        now = self._clock()
+        if self._phase_until is not None:
+            if now < self._phase_until:
+                return  # a transition is in progress; the duty is already set
+            self._phase_until = None
+            if self._phase == "brake":
+                self._write(self._neutral_dc)
+                self._phase = "neutral"
+                self._phase_until = now + self._reverse_neutral_hold_s
+                return
+            if self._phase == "neutral":
+                self._phase, self._in_reverse_mode = "rev", True
+                self._logger.info("Reverse mode engaged")
+            elif self._phase == "exit":
+                self._phase, self._in_reverse_mode = "fwd", False
+
+        req = self._requested_pct
+        if req < 0.0 and self._phase == "fwd":
+            self._write(self._reverse_brake_dc)
+            self._phase, self._phase_until, self._speed_pct = "brake", now + self._reverse_brake_hold_s, 0.0
+            self._logger.info(
+                "Entering reverse mode (brake_dc=%.3f neutral_dc=%.3f)"
+                % (self._reverse_brake_dc, self._neutral_dc)
+            )
+            return
+        if req >= 0.0 and self._phase == "rev":
+            self._write(self._neutral_dc)
+            self._phase, self._phase_until, self._speed_pct = "exit", now + self._reverse_exit_hold_s, 0.0
+            return
+
+        self._speed_pct = req
+        self._write(self._duty_for(req))
 
     def neutral(self) -> None:
         self.set_speed_pct(0.0)
@@ -201,6 +289,7 @@ class MaverickESCMotor:
         self._in_reverse_mode = False
         self._speed_pct = 0.0
         self._last_duty_cycle_pct = self._neutral_dc
+        self._phase, self._phase_until, self._requested_pct = "fwd", None, 0.0
         if disable_pwm:
             self._pwm.disable()
 
@@ -237,6 +326,9 @@ class MaverickESCMotor:
     def get_state(self) -> dict[str, float | bool]:
         return {
             "speed_pct": self._speed_pct,
+            "requested_pct": self._requested_pct,
+            "reverse_phase": self._phase,
+            "async_reverse": self._async_reverse,
             "pwm_dc": self._last_duty_cycle_pct,
             "neutral_dc": self._neutral_dc,
             "reverse_mode": self._in_reverse_mode,

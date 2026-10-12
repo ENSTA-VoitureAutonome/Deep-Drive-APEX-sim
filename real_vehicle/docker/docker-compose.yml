@@ -5,7 +5,12 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
       network: host
-    restart: "no"
+    # "no" by default: a stack that cannot start must not loop, and on this car
+    # a failing start usually means the LiDAR motor browning out the rail.
+    # `apex_race_up.sh` sets "unless-stopped" when a session is meant to
+    # survive a reboot or a dropped link (APEX_RACE_PERSIST=1); Docker's own
+    # exponential backoff then spaces the retries out.
+    restart: "${APEX_RESTART_POLICY:-no}"
     privileged: true
     network_mode: host
     devices:
@@ -22,6 +27,7 @@ services:
       APEX_I2C_BUS: "${APEX_I2C_BUS:-/dev/i2c-1}"
       APEX_LIDAR_PORT: "${APEX_LIDAR_PORT:-/dev/ttyUSB0}"
       APEX_LIDAR_BAUDRATE: "${APEX_LIDAR_BAUDRATE:-115200}"
+      APEX_LIDAR_BACKEND: "${APEX_LIDAR_BACKEND:-rplidar_express}"
       APEX_LIDAR_HEADING_OFFSET_DEG: "${APEX_LIDAR_HEADING_OFFSET_DEG:-}"
       APEX_LIDAR_X_M: "${APEX_LIDAR_X_M:-}"
       APEX_LIDAR_Y_M: "${APEX_LIDAR_Y_M:-}"
@@ -170,6 +176,27 @@ services:
       APEX_BRIDGE_ACTUATION_BACKEND: "${APEX_BRIDGE_ACTUATION_BACKEND:-}"
       APEX_ENABLE_LOCAL_ODOM_FUSION: "${APEX_ENABLE_LOCAL_ODOM_FUSION:-1}"
       APEX_ENABLE_SLAM_TOOLBOX: "${APEX_ENABLE_SLAM_TOOLBOX:-}"
+      # --- race stack (learned odometry -> slam_toolbox -> race driver)
+      APEX_ENABLE_RACE_STACK: "${APEX_ENABLE_RACE_STACK:-0}"
+      APEX_RACE_LAPS: "${APEX_RACE_LAPS:-1}"
+      APEX_RACE_RUN_DIR: "${APEX_RACE_RUN_DIR:-}"
+      APEX_RACE_PARAMS_FILE: "${APEX_RACE_PARAMS_FILE:-}"
+      APEX_RACE_VEHICLE_YAML: "${APEX_RACE_VEHICLE_YAML:-}"
+      APEX_RACE_CMD_TOPIC: "${APEX_RACE_CMD_TOPIC:-}"
+      APEX_RACE_REQUIRE_ARM: "${APEX_RACE_REQUIRE_ARM:-}"
+      APEX_RACE_DRIVER_CPU: "${APEX_RACE_DRIVER_CPU:-3}"
+      APEX_SLAM_CPU: "${APEX_SLAM_CPU:-2}"
+      APEX_SLAM_PARAMS_FILE: "${APEX_SLAM_PARAMS_FILE:-}"
+      APEX_ODOM_DIR: "${APEX_ODOM_DIR:-/odom_rt}"
+      APEX_ODOM_CPU: "${APEX_ODOM_CPU:-1}"
+      APEX_ODOM_CHECKPOINT: "${APEX_ODOM_CHECKPOINT:-}"
+      APEX_ODOM_SENSOR_PROFILE: "${APEX_ODOM_SENSOR_PROFILE:-APEX_real_wt61}"
+      APEX_ODOM_WARMUP_S: "${APEX_ODOM_WARMUP_S:-10}"
+      APEX_SET_GOVERNOR: "${APEX_SET_GOVERNOR:-}"
+      APEX_REPLAY_FIXTURE: "${APEX_REPLAY_FIXTURE:-}"
+      APEX_ENABLE_NANO: "${APEX_ENABLE_NANO:-1}"
+      APEX_ENABLE_LIDAR: "${APEX_ENABLE_LIDAR:-1}"
+      APEX_IMU_FRAME: "${APEX_IMU_FRAME:-imu_link}"
       APEX_RECON_DIAGNOSTIC_MODE: "${APEX_RECON_DIAGNOSTIC_MODE:-}"
       APEX_RECON_FIXED_SPEED_PCT: "${APEX_RECON_FIXED_SPEED_PCT:-}"
       APEX_RECON_STEP_DURATION_S: "${APEX_RECON_STEP_DURATION_S:-}"
@@ -226,6 +253,17 @@ services:
     volumes:
       - ../ros2_ws:/work/ros2_ws
       - ../../:/work/repo
+      # Captures and replay fixtures, the same mount the LiDAR-only container
+      # uses, so /work/data means the same thing in both.
+      - ../data:/work/data
       - /sys/class/pwm:/sys/class/pwm
+      # The learned odometry runs from the host tree, which carries torch,
+      # onnxruntime and numba (~1 GB that will not fit in the image on a disk
+      # with 1.4 GB free) and is the configuration measured on this Pi.
+      # Read-only: the car may run it, not change it.
+      - ${APEX_ODOM_RT_DIR:-/home/ensta/odom_rt}:/odom_rt:ro
+      # The CPU governor. A Pi at 1.7 GHz has a third less compute than the
+      # budget the architecture was sized against.
+      - /sys/devices/system/cpu:/sys/devices/system/cpu
     working_dir: /work/ros2_ws
     command: ["/bin/bash", "/work/ros2_ws/scripts/start_apex_pipeline.sh"]

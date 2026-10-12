@@ -1,0 +1,65 @@
+# slam_toolbox on the real car's learned LiDAR-inertial odometry.
+#
+# This is the file the simulation validated
+# (simulation/ros2_ws/src/apex_fusion_research/config/slam/slam_toolbox_learned.yaml)
+# with ONE change: `use_sim_time: false`. There is no /clock on the car.
+#
+# Nothing else is retuned, and that is deliberate:
+#   * the inputs are the same by construction -- odom_frame `odom_learned` with
+#     the TF published at every scan stamp, and the de-skewed revolution on
+#     `scan_topic` (the raw A2M8 scan is distorted over its ~100 ms sweep);
+#   * `max_laser_range: 12.0` is the A2M8's range, already correct;
+#   * `minimum_travel_distance: 0.2` / `minimum_travel_heading: 0.15` are a
+#     *geometric* baseline between matched scans, not a rate. At 0.70 m/s a scan
+#     is processed every ~0.29 s, so /map and the map->odom correction arrive at
+#     ~1.5-3 Hz. That is fine: the correction is rate-limited anyway
+#     (CorrectionConfig: 0.4 m/s, 5 deg/s, tau 0.25 s), the lap counter runs off
+#     the 50 Hz interpolated map pose, and closure.map_fresh_wait_s is 3.0 s.
+#     Lowering them is what flattened the matcher's response surface in the
+#     first place (see the tuning note below).
+#   * `transform_timeout: 0.2` matches the estimator's TF, which is stamped at
+#     the start of the revolution (~185 ms in the past on this Pi) exactly as
+#     the de-skewed scan is, so the lookup is an exact match, not an
+#     extrapolation.
+#
+# Original tuning note, unchanged:
+#
+# Scan-matcher tuning (2026-09-29; tools/analysis/replay_slam.py, recorded v5
+# runs replayed offline, README of learning/lidar_imu_pose §11). With the
+# defaults, the matcher's response surface was nearly flat (10 cm smear):
+# on lap 1 it moved the heading in random 0.2 deg steps at every scan and
+# ended no better than the odometry alone (open-loop error > 0.5 m in 29 %
+# of runs, up to 1.8 m; race error p95 > 0.35 m in 17 %). A sharper
+# correlation grid and fewer matches at low speed give 1 % and 6 %, and
+# they hold with an odometry 2-3x worse than the simulated one.
+/**:
+  ros__parameters:
+    use_sim_time: false
+    mode: mapping
+    map_frame: map
+    odom_frame: odom_learned
+    base_frame: base_link
+    scan_topic: /apex/learned_odometry/scan_deskewed
+
+    throttle_scans: 1
+    transform_publish_period: 0.02
+    map_update_interval: 0.5
+    resolution: 0.05
+    max_laser_range: 12.0
+    minimum_time_interval: 0.2
+    transform_timeout: 0.2
+    tf_buffer_duration: 30.0
+    stack_size_to_use: 40000000
+    enable_interactive_mode: false
+
+    use_scan_matching: true
+    use_scan_barycenter: true
+    minimum_travel_distance: 0.2  # was 0.05; binds only below ~1 m/s (0.2 s between processed scans)
+    minimum_travel_heading: 0.15  # was 0.05
+    correlation_search_space_smear_deviation: 0.03  # was 0.1 (default); 0.02 is worse again
+    scan_buffer_size: 20
+    scan_buffer_maximum_scan_distance: 15.0
+    link_match_minimum_response_fine: 0.1
+    link_scan_maximum_distance: 1.5
+    loop_search_maximum_distance: 3.0
+    do_loop_closing: true

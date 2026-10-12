@@ -27,7 +27,8 @@ RUN set -eux; \
         python3-pip \
         python3-serial \
         python3-yaml \
-        python3-venv; then \
+        python3-venv \
+        ros-jazzy-slam-toolbox; then \
       install_ok=1; \
       break; \
     fi; \
@@ -37,6 +38,7 @@ RUN set -eux; \
   python3 -m venv --system-site-packages /opt/apex_venv \
   && /opt/apex_venv/bin/python -m pip install -U pip setuptools \
   && /opt/apex_venv/bin/pip install --no-cache-dir rplidar-roboticia \
-  && rm -rf /var/lib/apt/lists/*
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb
 
 WORKDIR /work/ros2_ws

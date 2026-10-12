@@ -19,10 +19,13 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
 
-import matplotlib
+try:  # plots only: the car runs the encoders of this module without matplotlib
+    import matplotlib
 
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+except ImportError:
+    plt = None
 import numpy as np
 import torch
 from torch import Tensor, nn

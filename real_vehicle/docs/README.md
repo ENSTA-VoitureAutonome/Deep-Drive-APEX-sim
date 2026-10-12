@@ -18,6 +18,7 @@ The goal of this documentation is to explain the code as a set of cooperating mo
 - [Actuation Bridge and ESC/Servo Mapping](./actuation-bridge.md)
 - [Final Tests README](./FINAL_TESTS_README.md)
 - [Final Test Commands](./final-test-commands.md)
+- [Sensor Timing Requirements (real2sim)](./sensor_timing_requirements.md): IMU firmware v2, Express LiDAR driver at 10 Hz, stamps from the sensor clocks, bring-up checklist
 
 ## End-to-End Pipeline
 

@@ -87,6 +87,27 @@ profiles:
     a_acc_mps2: 1.0
     a_dec_mps2: 1.5
 
+  # The regime v5 never saw. The dataset's recorded standstill is 1.5 s
+  # (vehicle.yaml run.static_start_s) and the training chunks are 3.2 s, so
+  # minutes of standing still are an extrapolation, and the network resolves
+  # it by inventing forward motion: 7 m/min on a parked stream, measured in
+  # learning/lidar_imu_pose/README.md section 15. These runs put the regime in
+  # the training set, with the truth it needs -- zero increment, zero velocity
+  # and the accelerometer bias that is really there.
+  parked_long:
+    kind: stop_and_go
+    description: >-
+      Slow cruise at 12-25 % of v_ref with 2-3 stops per lap of 20-60 s: tens
+      of seconds of genuine standstill inside a driving run, entered and left
+      under the car's own braking and acceleration.
+    cruise_fraction: [0.12, 0.25]
+    lateral_accel_mps2: 2.0
+    stops_per_lap: [2, 3]
+    dwell_s: [20.0, 60.0]
+    min_stop_spacing_m: 5.0
+    a_acc_mps2: 1.0
+    a_dec_mps2: 1.5
+
   # ------------------------------------------------------------- zero-shot
   zs_creep:
     kind: variable

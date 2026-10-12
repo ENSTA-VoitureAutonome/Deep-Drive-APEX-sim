@@ -1,5 +1,28 @@
 #!/usr/bin/env python3
-"""Bridge `/apex/cmd_vel_track` into direct APEX ESC + steering commands."""
+"""Bridge `/apex/cmd_vel_track` into direct APEX ESC + steering commands.
+
+Two profiles, selected by ``actuation_profile``:
+
+``legacy`` (the default, unchanged)
+    What the recognition-tour stack was tuned with: a step to
+    ``min_effective_speed_pct`` at any non-zero command, an exponential ramp, a
+    launch boost and a ramp-down, plus direct gamepad steering override.
+
+``affine``
+    What the race stack needs. ``linear.x`` maps to ESC percent through one
+    affine function per direction (:mod:`speed_map`) with no ramp, no boost and
+    no deadband compensation, because ``apex_race.core.plant_id`` identifies the
+    deadband, the gain and the actuator lag from the car's own odometry while it
+    drives, and a bridge that also compensated them would be what gets
+    identified. Direction changes run as a non-blocking phase machine instead of
+    sleeping inside the control callback, and the servo holds its angle at a
+    stop instead of snapping to centre.
+
+In both profiles the computed steering angle is now clamped to
+``max_steering_deg`` before it reaches the servo. It was not, and the car logged
+46-48 deg requests against an 18 deg mechanical limit
+(``data/reports/recognition_tour_diagnostic_report.md``).
+"""
 
 from __future__ import annotations
 
@@ -14,6 +37,7 @@ from rclpy.node import Node
 from std_msgs.msg import Float64, String
 
 from .actuation import MaverickESCMotor, SteeringServo
+from .speed_map import SpeedMap, steer_deg_from_twist
 
 
 class CmdVelToApexActuationNode(Node):
@@ -29,6 +53,13 @@ class CmdVelToApexActuationNode(Node):
         self.declare_parameter("command_timeout_s", 0.35)
         self.declare_parameter("manual_status_stale_s", 0.50)
         self.declare_parameter("use_direct_manual_steering", True)
+        self.declare_parameter("actuation_profile", "legacy")  # legacy | affine
+        # `affine` profile only: the clean m/s -> ESC percent map. See speed_map.py.
+        self.declare_parameter("esc_zero_pct", 15.0)
+        self.declare_parameter("speed_pct_per_mps", 33.0)
+        self.declare_parameter("esc_zero_rev_pct", 18.0)
+        self.declare_parameter("reverse_pct_per_mps", 33.0)
+        self.declare_parameter("decode_v_min_mps", 0.02)  # below this the servo holds its angle
         self.declare_parameter("wheelbase_m", 0.30)
         self.declare_parameter("max_steering_deg", 18.0)
         self.declare_parameter("max_linear_speed_mps", 0.55)
@@ -121,6 +152,41 @@ class CmdVelToApexActuationNode(Node):
             0.0, float(self.get_parameter("steering_rate_limit_deg_per_s").value)
         )
         self._active_brake_on_zero = bool(self.get_parameter("active_brake_on_zero").value)
+        self._actuation_profile = str(self.get_parameter("actuation_profile").value).strip().lower()
+        if self._actuation_profile not in ("legacy", "affine"):
+            raise ValueError(f"actuation_profile must be legacy or affine, not {self._actuation_profile!r}")
+        self._affine = self._actuation_profile == "affine"
+        self._decode_v_min_mps = max(0.0, float(self.get_parameter("decode_v_min_mps").value))
+        self._speed_map: SpeedMap | None = None
+        if self._affine:
+            self._speed_map = SpeedMap(
+                esc_zero_pct=float(self.get_parameter("esc_zero_pct").value),
+                pct_per_mps=float(self.get_parameter("speed_pct_per_mps").value),
+                max_pct=self._max_speed_pct,
+                esc_zero_rev_pct=float(self.get_parameter("esc_zero_rev_pct").value),
+                rev_pct_per_mps=float(self.get_parameter("reverse_pct_per_mps").value),
+                max_rev_pct=self._max_reverse_speed_pct,
+            )
+            # The shaper owns the launch and the identifier owns the deadband:
+            # anything here that depends on the command history would be
+            # identified instead of the car.
+            for name, value in (("speed_pct_ramp_duration_s", self._speed_pct_ramp_duration_s),
+                                ("launch_boost_speed_pct", self._launch_boost_speed_pct),
+                                ("speed_pct_ramp_down_per_s", self._speed_pct_ramp_down_per_s)):
+                if value > 1.0e-6:
+                    self.get_logger().warning(
+                        "affine profile: %s=%.3f is ignored (the adaptive layer owns it)" % (name, value)
+                    )
+            self._speed_pct_ramp_duration_s = 0.0
+            self._launch_boost_speed_pct = 0.0
+            self._speed_pct_ramp_down_per_s = 0.0
+            if self._use_direct_manual_steering:
+                self.get_logger().warning("affine profile: use_direct_manual_steering is forced off")
+                self._use_direct_manual_steering = False
+            if self._active_brake_on_zero:
+                # brake_to_neutral() sleeps 0.24 s inside the control callback.
+                self.get_logger().warning("affine profile: active_brake_on_zero is forced off")
+                self._active_brake_on_zero = False
         self._actuation_backend = str(self.get_parameter("actuation_backend").value).strip().lower()
         self._sim_motor_pwm_topic = str(self.get_parameter("sim_motor_pwm_topic").value)
         self._sim_steering_pwm_topic = str(self.get_parameter("sim_steering_pwm_topic").value)
@@ -139,6 +205,7 @@ class CmdVelToApexActuationNode(Node):
             backend=self._actuation_backend,
             node=self,
             publish_topic=self._sim_motor_pwm_topic,
+            async_reverse=self._affine,
         )
         self._steering = SteeringServo(
             channel=int(self.get_parameter("steering_channel").value),
@@ -185,6 +252,9 @@ class CmdVelToApexActuationNode(Node):
         self._speed_ramp_start_pct = 0.0
         self._speed_ramp_target_pct = 0.0
         self._launch_boost_until_monotonic = 0.0
+        self._cmd_seq = 0
+        self._cmd_gap_ms_max = 0.0
+        self._steering_held = False
 
         self.get_logger().info(
             "CmdVelToApexActuationNode started (cmd=%s max_linear=%.2f m/s forward_pct=%.1f..%.1f reverse_pct=%.1f..%.1f)"
@@ -201,7 +271,14 @@ class CmdVelToApexActuationNode(Node):
     def _cmd_cb(self, msg: Twist) -> None:
         self._cmd_linear_x_mps = float(msg.linear.x)
         self._cmd_angular_z_rps = float(msg.angular.z)
-        self._last_cmd_monotonic = time.monotonic()
+        now = time.monotonic()
+        # How steady the driver's 50 Hz stream really is, measured where it
+        # matters: a gap approaching command_timeout_s means the bridge is about
+        # to cut to neutral. The race pre-flight gates on this.
+        if self._last_cmd_monotonic > 0.0:
+            self._cmd_gap_ms_max = max(self._cmd_gap_ms_max, 1.0e3 * (now - self._last_cmd_monotonic))
+        self._cmd_seq += 1
+        self._last_cmd_monotonic = now
 
     def _manual_status_cb(self, msg: String) -> None:
         try:
@@ -237,6 +314,8 @@ class CmdVelToApexActuationNode(Node):
         return max(-self._max_steering_deg, min(self._max_steering_deg, steering_deg))
 
     def _map_linear_speed_to_pct(self, linear_x_mps: float) -> float:
+        if self._speed_map is not None:
+            return self._speed_map.pct(linear_x_mps)
         if abs(linear_x_mps) <= 1e-4:
             return 0.0
         ratio = max(0.0, min(1.0, abs(linear_x_mps) / self._max_linear_speed_mps))
@@ -249,11 +328,27 @@ class CmdVelToApexActuationNode(Node):
             + (ratio * (self._max_reverse_speed_pct - self._min_effective_reverse_speed_pct))
         )
 
-    def _compute_steering_deg(self, linear_x_mps: float, angular_z_rps: float) -> float:
-        if abs(linear_x_mps) <= 1e-4:
-            return 0.0
-        steering_rad = math.atan((self._wheelbase_m * angular_z_rps) / linear_x_mps)
-        return math.degrees(steering_rad)
+    def _compute_steering_deg(self, linear_x_mps: float, angular_z_rps: float) -> float | None:
+        """Steering angle [deg], clamped; ``None`` means hold the current angle.
+
+        The clamp is the fix for the defect in the diagnostic report: the
+        computed branch was unbounded and the servo's duty saturation hid it.
+        """
+        v_min = self._decode_v_min_mps if self._affine else 1.0e-4
+        deg, saturated = steer_deg_from_twist(
+            linear_x_mps, angular_z_rps, self._wheelbase_m, self._max_steering_deg, v_min
+        )
+        if saturated:
+            self.get_logger().warning(
+                "steering request beyond %.1f deg, clamped" % self._max_steering_deg,
+                throttle_duration_sec=5.0,
+            )
+        if deg is None:
+            # Below the decode speed the command carries no steering
+            # information. The simulated bridge holds the angle; snapping to
+            # centre at the end of every stop is an input nobody asked for.
+            return None if self._affine else 0.0
+        return deg
 
     def _start_speed_ramp(self, *, target_speed_pct: float, now_monotonic: float) -> None:
         self._speed_ramp_start_monotonic = now_monotonic
@@ -333,6 +428,15 @@ class CmdVelToApexActuationNode(Node):
             {
                 "state": "timeout_hold" if timed_out else "tracking",
                 "actuation_backend": self._actuation_backend,
+                "actuation_profile": self._actuation_profile,
+                "speed_map": self._speed_map.describe() if self._speed_map is not None else None,
+                "max_steering_deg": self._max_steering_deg,
+                "steering_authority_deg": self._steering.authority_deg,
+                "steering_held": self._steering_held,
+                "decode_v_min_mps": self._decode_v_min_mps,
+                "cmd_seq": self._cmd_seq,
+                "cmd_gap_ms_max": round(self._cmd_gap_ms_max, 2),
+                "motor_state": self._motor.get_state(),
                 "timed_out": bool(timed_out),
                 "desired_linear_x_mps": self._cmd_linear_x_mps,
                 "desired_angular_z_rps": self._cmd_angular_z_rps,
@@ -379,6 +483,9 @@ class CmdVelToApexActuationNode(Node):
         manual_steering_deg = self._direct_manual_steering_deg(now_monotonic)
         if manual_steering_deg is not None:
             desired_steering_deg = manual_steering_deg
+        self._steering_held = desired_steering_deg is None
+        if desired_steering_deg is None:
+            desired_steering_deg = self._last_requested_steering_deg
         desired_speed_pct = self._map_linear_speed_to_pct(desired_linear_x_mps)
 
         requested_steering_deg = self._apply_rate_limit(
@@ -388,7 +495,14 @@ class CmdVelToApexActuationNode(Node):
             rate_down_per_s=self._steering_rate_limit_deg_per_s,
             dt_s=dt_s,
         )
-        if desired_speed_pct > 1e-6:
+        if self._affine:
+            # One affine map, no history: this is the whole point of the profile.
+            self._speed_ramp_start_monotonic = None
+            self._speed_ramp_start_pct = self._last_applied_speed_pct
+            self._speed_ramp_target_pct = desired_speed_pct
+            self._launch_boost_until_monotonic = 0.0
+            applied_speed_pct = desired_speed_pct
+        elif desired_speed_pct > 1e-6:
             if (
                 self._speed_ramp_start_monotonic is None
                 or abs(desired_speed_pct - self._speed_ramp_target_pct) > 1.0e-6
@@ -434,6 +548,7 @@ class CmdVelToApexActuationNode(Node):
             steering_state.get("applied_deg", requested_steering_deg)
         )
         self._motor.set_speed_pct(applied_speed_pct)
+        self._motor.tick()  # advance the non-blocking direction change, if any
         self._last_desired_steering_deg = desired_steering_deg
         self._last_desired_speed_pct = desired_speed_pct
         self._last_requested_steering_deg = requested_steering_deg

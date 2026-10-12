@@ -10,9 +10,9 @@ import math
 
 import numpy as np
 
-from apex_fusion_research.core.imu_chip import ImuChip, ImuChipConfig, gazebo_noise_from_profile
+from apex_fusion_research.core.imu_chip import ImuChip, ImuChipConfig, ThermalConfig, chip_config_from_profile, gazebo_noise_from_profile
 from apex_fusion_research.core.lidar_noise import LidarNoiseConfig
-from apex_fusion_research.core.lidar_rolling import RollingLidar, RollingLidarConfig, bin_time_fraction
+from apex_fusion_research.core.lidar_rolling import RollingLidar, RollingLidarConfig, bin_time_fraction, rolling_config_from_profile
 
 G = 9.80665
 
@@ -77,6 +77,43 @@ def test_gazebo_noise_of_the_real_profile():
     assert gz["gyro_bias_std"] == [0.06, 0.08, 0.05]
     assert np.allclose(gz["accel_white_std"], [1e-2 * math.sqrt(500.0)] * 3)
 
+
+
+def test_thermal_drift_follows_the_warm_up_and_is_in_the_bias_label():
+    th = ThermalConfig(gyro_coeff_std=8.727e-4, accel_coeff_std=4.903e-3, rise_c=(20.0, 20.0), tau_s=(60.0, 60.0), start_frac=(0.0, 0.0))
+    chip = ImuChip(ImuChipConfig(odr_hz=104.0, thermal=th, seed=6))
+    n = 120_000  # 120 s = 2 tau
+    out = _feed(chip, n, chunk=1000)
+    gz = np.array([o.gyro[2] for o in out])
+    t = np.array([o.t_true_ns for o in out]) * 1e-9
+    expect = chip.thermal_coeff[2] * 20.0 * (1.0 - np.exp(-t / 60.0))  # gyro z
+    assert np.abs(gz - expect).max() < 2e-3  # quantization + label smoothing only
+    assert abs(gz[-1] / (chip.thermal_coeff[2] * 20.0) - (1.0 - math.exp(-2.0))) < 0.02
+    labels = np.array([o.bias_gyro[2] for o in out])
+    assert np.abs(labels[2000:] - expect[2000:]).max() < 2e-3
+    acc = np.array([o.accel[0] for o in out])
+    assert abs(acc[-1] - chip.thermal_coeff[3] * 20.0 * (1.0 - math.exp(-2.0))) < 5e-3
+
+
+def test_thermal_drift_off_leaves_the_other_draws_unchanged():
+    a = ImuChip(ImuChipConfig(odr_hz=104.0, clock_ppm_std=5000.0, timestamp_jitter_std_ms=0.5, seed=7))
+    b = ImuChip(ImuChipConfig(odr_hz=104.0, clock_ppm_std=5000.0, timestamp_jitter_std_ms=0.5, seed=7,
+                              thermal=ThermalConfig(gyro_coeff_std=1e-3)))
+    assert a.period_s == b.period_s
+    sa, sb = _feed(a, 3000), _feed(b, 3000)
+    assert [o.stamp_ns for o in sa] == [o.stamp_ns for o in sb]
+
+
+def test_stamp_offset_is_drawn_per_power_up_and_reproducible():
+    imu = {"rate_hz": 104.0, "timestamp": {"offset_ms": 1.0, "offset_std_ms": 3.0}}
+    lidar = {"beams": 360, "rate_hz": 13.0, "range_min_m": 0.15, "range_max_m": 12.0, "timestamp": {"offset_std_ms": 3.0}}
+    imu_off = [chip_config_from_profile(imu, None, s).timestamp_offset_ms for s in range(400)]
+    lid_off = [rolling_config_from_profile(lidar, s).timestamp_offset_ms for s in range(400)]
+    assert chip_config_from_profile(imu, None, 11).timestamp_offset_ms == imu_off[11]
+    assert abs(np.mean(imu_off) - 1.0) < 0.5 and abs(np.std(imu_off) - 3.0) < 0.4
+    assert abs(np.std(lid_off) - 3.0) < 0.4
+    assert abs(np.corrcoef(imu_off, lid_off)[0, 1]) < 0.15  # independent draws per sensor
+    assert chip_config_from_profile({"rate_hz": 104.0}, None, 3).timestamp_offset_ms == 0.0
 
 # ------------------------------------------------------------------- LiDAR
 ROOM = [((-4, -3), (5, -3)), ((5, -3), (5, 3)), ((5, 3), (-4, 3)), ((-4, 3), (-4, -3)), ((1.5, 3), (1.5, 1.8)), ((-2, -3), (-1.2, -1.6))]

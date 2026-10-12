@@ -76,6 +76,10 @@ References
   [5] N. Srivastava, G. Hinton, A. Krizhevsky, I. Sutskever, R. Salakhutdinov,
       "Dropout: A Simple Way to Prevent Neural Networks from Overfitting",
       JMLR 15, 2014.
+  [6] G. Cybenko, "Approximation by superpositions of a sigmoidal function",
+      Mathematics of Control, Signals and Systems 2(4), 1989.
+  [7] K. Hornik, "Approximation capabilities of multilayer feedforward
+      networks", Neural Networks 4(2), 1991.
 """
 
 from __future__ import annotations
@@ -191,20 +195,68 @@ def mirror_channels(ch: Tensor, mirror: Tensor) -> Tensor:
     return torch.where(mirror[:, None, None, None] & flip[None, None, :, None], ch[..., perm], ch)
 
 
+PAIR_WIDTHS = (48, 64, 96, 128)  # channels of the four scan-pair convolutions (every trained model so far)
+PAIR_KERNELS = ((7, 1), (5, 2), (5, 2), (3, 2))  # (kernel, stride) of those convolutions
+
+
 class PairEncoder(nn.Module):
-    def __init__(self, hidden: int, channels: int = 8, sectors: int = 9, bottleneck: int | None = 32, dropout: float = 0.2) -> None:
+    def __init__(self, hidden: int, channels: int = 8, sectors: int = 9, bottleneck: int | None = 32, dropout: float = 0.2,
+                 widths: tuple[int, ...] = PAIR_WIDTHS) -> None:
         super().__init__()
-        convs = [*_conv(channels, 48, 7, 1), *_conv(48, 64, 5, 2), *_conv(64, 96, 5, 2), *_conv(96, 128, 3, 2), nn.AdaptiveAvgPool1d(sectors)]
+        if len(widths) != len(PAIR_KERNELS) or any(w % 8 for w in widths):
+            raise ValueError(f"pair widths must be {len(PAIR_KERNELS)} multiples of 8 (GroupNorm(8, c)), got {widths}")
+        convs, cin = [], channels
+        for w, (k, stride) in zip(widths, PAIR_KERNELS):
+            convs += _conv(cin, w, k, stride)
+            cin = w
+        convs.append(nn.AdaptiveAvgPool1d(sectors))
         if bottleneck is None:  # layout of the unregularised run (attempt 2)
             self.cnn = nn.Sequential(*convs)
-            self.project = nn.Sequential(nn.Flatten(), nn.Linear(128 * sectors, hidden), nn.SiLU())
+            self.project = nn.Sequential(nn.Flatten(), nn.Linear(cin * sectors, hidden), nn.SiLU())
         else:
-            self.cnn = nn.Sequential(*convs, nn.Conv1d(128, bottleneck, 1), nn.SiLU())
+            self.cnn = nn.Sequential(*convs, nn.Conv1d(cin, bottleneck, 1), nn.SiLU())
             self.project = nn.Sequential(nn.Flatten(), nn.Dropout(dropout), nn.Linear(bottleneck * sectors, hidden), nn.SiLU())
 
     def forward(self, x: Tensor) -> Tensor:
         b, t, c, n = x.shape
         return self.project(self.cnn(x.reshape(b * t, c, n))).reshape(b, t, -1)
+
+
+IMU_WINDOW = 40  # samples of the zero-padded IMU window (sqlite_windows.build_split max_imu, live_odometry.MAX_IMU)
+
+
+class WindowImuEncoder(nn.Module):
+    """The IMU window of an interval to one feature vector with a two-layer
+    perceptron, instead of a GRU stepped over the samples (v6, ``distill.py``).
+
+    The IMU encoder keeps no state between intervals: its output is a
+    function of the zero-padded window (``IMU_WINDOW`` x 6) and of its length
+    only. A GRU run over at most ``IMU_WINDOW`` samples is one such function
+    (the recurrence shares weights along the window; it holds nothing beyond
+    it), and a perceptron with one hidden layer over the whole window
+    approximates any continuous function of it [6, 7]. The difference is the
+    cost on the Pi: two matrix products instead of 40 sequential steps of
+    small operations (README section 14). The length enters one-hot, so the
+    encoder knows where the zero padding starts."""
+
+    def __init__(self, hidden: int, width: int = 128, samples: int = IMU_WINDOW) -> None:
+        super().__init__()
+        self.samples = samples
+        self.mlp = nn.Sequential(nn.Linear(samples * 6 + samples + 1, width), nn.SiLU(), nn.Linear(width, hidden))
+
+    def forward(self, imu: Tensor, lengths: Tensor) -> Tensor:
+        b, t, n, c = imu.shape
+        if n > self.samples:
+            raise ValueError(f"IMU window of {n} samples, the encoder takes at most {self.samples}")
+        x = imu.reshape(b * t, n, c)
+        if n < self.samples:  # training batches are cut to the longest window of the split
+            x = nn.functional.pad(x, (0, 0, 0, self.samples - n))
+        n_used = lengths.reshape(-1, 1).to(x.dtype).clamp(max=float(self.samples))  # float: exact for these integers, plain ops in ONNX
+        onehot = (torch.arange(self.samples + 1, device=imu.device, dtype=x.dtype) == n_used).to(x.dtype)
+        return self.mlp(torch.cat((x.reshape(b * t, self.samples * c), onehot), dim=1)).reshape(b, t, -1)
+
+
+IMU_ENCODERS = ("gru", "window")
 
 
 def _head(inp: int, hidden: int, out: int, init_scale: float = 1.0) -> nn.Sequential:
@@ -233,15 +285,19 @@ ICP_FEAT_MIRROR = (1.0,) * 8 + (-1.0,)  # the ICP gyro-bias feature changes sign
 
 class StreamingPoseNet(nn.Module):
     def __init__(self, hidden: int = 128, scales: StreamScales = StreamScales(), regularize: bool = True, hybrid: bool = False,
-                 sweep_profile: bool = False) -> None:
+                 sweep_profile: bool = False, pair_widths: tuple[int, ...] = PAIR_WIDTHS, imu_encoder: str = "gru") -> None:
         super().__init__()
+        if imu_encoder not in IMU_ENCODERS:
+            raise ValueError(f"imu_encoder must be one of {IMU_ENCODERS}, got {imu_encoder!r}")
         self.hidden = hidden
         self.scales = scales
         self.hybrid = hybrid
         self.sweep_profile = sweep_profile  # rotation during the sweeps from the gyro profile (no parameters: a flag)
         extra = ICP_INPUTS if hybrid else 0
-        self.pair_encoder = PairEncoder(hidden) if regularize else PairEncoder(hidden, bottleneck=None)
-        self.imu_encoder = ImuEncoder(hidden)
+        self.pair_widths = tuple(pair_widths)
+        self.pair_encoder = PairEncoder(hidden, widths=self.pair_widths) if regularize else PairEncoder(hidden, bottleneck=None, widths=self.pair_widths)
+        self.imu_encoder_type = imu_encoder  # "gru": every model up to v5; "window": the distilled perceptron (v6)
+        self.imu_encoder = ImuEncoder(hidden) if imu_encoder == "gru" else WindowImuEncoder(hidden)
         self.measure = _head(hidden + extra, hidden, 3, init_scale=0.1 if hybrid else 1.0)
         self.inp = nn.Sequential(nn.Linear(2 * hidden + PHYS + extra, hidden), nn.SiLU(), nn.Dropout(0.1 if regularize else 0.0))
         self.cells = nn.ModuleList([nn.GRUCell(hidden, hidden), nn.GRUCell(hidden, hidden)])
@@ -339,15 +395,19 @@ class StreamingPoseNet(nn.Module):
 
 
 def load_checkpoint(path, device: torch.device | str = "cpu") -> tuple["StreamingPoseNet", dict]:
-    """A v2 checkpoint (``train_streaming.py train``) with its architecture
-    read from the file: hidden size, hybrid input, and the unregularised
+    """A v2 checkpoint (``train_streaming.py train``, or ``distill.py``) with
+    its architecture read from the file: hidden size, scan-pair convolution
+    widths, IMU encoder (GRU up to v5), hybrid input, and the unregularised
     layout of the early runs (no sector bottleneck). The ICP variant a hybrid
     was trained with is ``ckpt["config"]["icp_variant"]``."""
     ck = torch.load(path, map_location=device, weights_only=False)
     cfg = ck.get("config", {})
     regularize = any(k.startswith("pair_encoder.cnn.13.") for k in ck["model"])
-    model = StreamingPoseNet(int(cfg.get("hidden", 128)), regularize=regularize, hybrid=bool(cfg.get("hybrid", False)),
-                             sweep_profile=bool(cfg.get("sweep_profile", False))).to(device)
+    scales = StreamScales(bias_max=tuple(cfg["bias_max"])) if "bias_max" in cfg else StreamScales()
+    model = StreamingPoseNet(int(cfg.get("hidden", 128)), scales=scales, regularize=regularize, hybrid=bool(cfg.get("hybrid", False)),
+                             sweep_profile=bool(cfg.get("sweep_profile", False)),
+                             pair_widths=tuple(int(w) for w in cfg.get("pair_widths", PAIR_WIDTHS)),
+                             imu_encoder=str(cfg.get("imu_encoder", "gru"))).to(device)
     model.load_state_dict(ck["model"])
     model.eval()
     return model, ck

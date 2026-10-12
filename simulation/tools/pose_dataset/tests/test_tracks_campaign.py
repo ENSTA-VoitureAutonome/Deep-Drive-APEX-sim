@@ -14,7 +14,9 @@ def test_rounded_polygon_square():
 @pytest.mark.parametrize("name", sorted(load_track_specs()))
 def test_every_track_is_valid(name):
     t = load_track(name)
-    assert t.meta["reference_length_m"] > 15
+    # 15 m is the floor for the simulator's own tracks; the ones that model the
+    # real car's envelope are a 10-15 m lap by design and say so in their spec.
+    assert t.meta["reference_length_m"] > float(t.spec.get("min_reference_length_m", 15.0))
     assert t.meta["min_reference_radius_m"] >= float(t.spec.get("min_path_radius_m", 1.15)) - 1e-6
 
 

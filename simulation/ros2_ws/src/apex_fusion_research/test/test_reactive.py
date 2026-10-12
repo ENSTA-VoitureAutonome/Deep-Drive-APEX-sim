@@ -1,10 +1,12 @@
 import math
 
 import numpy as np
+import pytest
 
 from apex_fusion_research.core.local_cloud import ScanAccumulator, scan_points, supported, voxel_downsample
 from apex_fusion_research.core.race_config import ReactiveConfig, VehicleLimits
-from apex_fusion_research.core.reactive import LEFT, RIGHT, ReactiveDriver, ReactivePlanner, WallTracker, classify, pursue, two_arc_paths
+from apex_fusion_research.core.reactive import (LEFT, RIGHT, ReactiveDriver, ReactivePlanner, WallTracker, classify, known_length, lane_known,
+                                                lane_speed, lane_walls, pursue, two_arc_paths)
 
 VEH, CFG = VehicleLimits(), ReactiveConfig()
 
@@ -283,3 +285,159 @@ def test_ended_wall_is_left_for_the_wall_that_goes_on_without_hysteresis():
     right = line(-0.5, -0.5, 2.5, -2.6)
     st = tr.update(classify(np.vstack((ended, right)), CFG), (0.0, 0.0, 0.0), 0.5)  # 0.5 m after acquiring: within the hold
     assert st.ref is not None and st.ref.side == RIGHT
+
+
+def test_lane_known_beside_between_and_beyond_the_end():
+    walls = lane_walls(classify(np.vstack((line(-2, 1.2, 3, 1.2), line(-2, -1.2, 3, -1.2))), CFG), CFG)
+    pts = np.array([[0.0, 0.0], [2.5, 0.5], [4.5, 0.0], [0.0, 2.4]])
+    known = lane_known(pts, walls, 1.0, CFG.both_max_width_m)
+    # (0, 0) is 1.2 m from each wall (more than d_max) but between them; beyond the ends nothing is known
+    assert known.tolist() == [True, True, False, False]
+    single = lane_walls(classify(line(-2, 1.2, 3, 1.2), CFG), CFG)
+    assert lane_known(pts, single, 1.0, CFG.both_max_width_m).tolist() == [False, True, False, False]
+
+
+def test_known_length_is_the_proven_prefix():
+    known = np.array([[True, True, True, False, True], [True] * 5])
+    s = np.arange(1, 6) * 0.5
+    kl = known_length(known, s, 2.5)
+    assert abs(kl[0] - 1.9) < 1e-9 and kl[1] == 2.5  # the last proven station before the first unproven one
+    assert lane_speed(2.5, 2.5, CFG) == math.inf and lane_speed(CFG.lane_margin_m, 3.0, CFG) == 0.0
+
+
+def test_pillar_next_to_the_wall_does_not_hide_it():
+    cloud = np.vstack((line(-2, 1.0, 5, 1.0), circle(1.0, 0.55, 0.15)))
+    walls = lane_walls(classify(cloud, CFG), CFG)
+    assert len(walls) == 2  # the wall and the pillar joined to it, kept apart
+    assert lane_known(np.array([[1.0, -0.1], [1.0, 0.1]]), walls, 1.24, CFG.both_max_width_m).all()
+
+
+def test_sparse_trail_extends_the_wall_around_a_corner():
+    a = np.radians(np.arange(0, 61, 12))  # a few returns on the far side of a 60 deg bend, 0.45 m apart
+    trail = np.column_stack((2.0 + 1.9 * np.sin(a), 1.2 + 1.9 * (1 - np.cos(a))))
+    cloud = np.vstack((line(-2, 1.2, 2.0, 1.2), trail[1:]))
+    walls = lane_walls(classify(cloud, CFG), CFG)
+    assert sum(len(w.points) for w in walls) == len(cloud)
+    p = np.array([[3.55, 0.95]])  # 0.8 m from the trail, on the lane side of the bend
+    assert lane_known(p, walls, 1.24, CFG.both_max_width_m).all()
+
+
+def test_speed_drops_before_the_end_of_the_proven_lane():
+    # Two walls that end 1.2 m ahead (beyond: invisible curbs): the car must be able to stop within the proven lane.
+    short = np.vstack((line(-3, 0.9, 0.8, 0.9), line(-3, -0.9, 0.8, -0.9)))
+    cmd, _ = drive(short, v=1.5)
+    assert cmd.diag["lane_known"] < 1.5 and cmd.v <= max(cmd.diag["v_lane"], CFG.v_min_mps) + 1e-9 and cmd.v < 1.25
+    long = np.vstack((line(-3, 0.9, 6, 0.9), line(-3, -0.9, 6, -0.9)))
+    cmd, _ = drive(long, v=1.5)
+    assert cmd.diag["v_lane"] == math.inf and cmd.v > 1.2
+
+
+
+def test_wheel_shadow_does_not_erase_the_wall_beside_the_car():
+    # A front wheel hides the beams from -110 to -85 deg in every revolution. The right wall the car passes was seen
+    # ahead before; no return in the shadow must not carve it (it used to split the wall, and the driver lost it).
+    wall = line(-3, -1.0, 10, -1.0, 0.01)
+    acc = ScanAccumulator(window_s=5.0, window_m=10.0)
+    inc = np.radians(1.0)
+    shadow = (np.degrees(-np.pi + inc * np.arange(360)) > -110) & (np.degrees(-np.pi + inc * np.arange(360)) < -85)
+    for k in range(20):
+        x = 0.1 * k
+        r = _ranges_to(wall - [x, 0.0])
+        r[shadow] = np.inf
+        acc.add_scan(k, r, -np.pi, inc, (x, 0.0, 0.0))
+    cloud = acc.cloud_odom()
+    beside = cloud[(np.abs(cloud[:, 0] - 1.9) < 0.3) & (np.abs(cloud[:, 1] + 1.0) < 0.05)]
+    assert len(beside) >= 12  # the wall under the shadow is still there (18 points; 7 when no return carved it)
+    assert acc.return_rate[shadow].max() < 0.5 and np.median(acc.return_rate[~shadow & (acc.return_rate > 0)]) > 0.9
+
+
+# --------------------------------------------------------------- recovery
+def test_the_rear_offset_reaches_every_planner():
+    """The rear axle is where the car measures it to be, and the candidate
+    paths, the wall distances and the footprint are all built around it."""
+    from apex_fusion_research.core.race_config import RaceDriverConfig
+    from apex_fusion_research.core.reactive import ReactiveDriver
+
+    cfg = RaceDriverConfig()
+    driver = ReactiveDriver(cfg.vehicle, cfg.reactive)
+    driver.set_rear_offset(-0.085)
+    for holder in (driver, driver.tracker, driver.planner, driver.wall_planner):
+        assert holder.veh.rear_offset_m == pytest.approx(-0.085)
+    driver.set_rear_offset(-0.0855)  # below the millimetre: not worth rebuilding
+    assert driver.planner.veh.rear_offset_m == pytest.approx(-0.085)
+
+
+def test_the_car_backs_out_of_a_place_with_no_feasible_path():
+    """Today a car with no feasible candidate brakes and stays there for the
+    rest of the run. It must get itself out, with a bounded manoeuvre."""
+    from apex_fusion_research.core.race_config import RaceDriverConfig
+    from apex_fusion_research.core.race_driver import EXPLORE, RaceDriverCore
+    from apex_fusion_research.core.reactive import ReactiveCommand
+
+    cfg = RaceDriverConfig()
+    core = RaceDriverCore(cfg, 3)
+    core.phase = EXPLORE
+    core.cmd = ReactiveCommand(0.0, 0.0, np.zeros((0, 2)), False, {"free": 0.1})
+    core.rear_clear = 1.0  # the car drove in through there
+    t = 0.0
+    for _ in range(60):  # a second of standing still against the block
+        t += 0.02
+        v, _steer, _row = core.control(t, (0.0, 0.0, 0.0), 0.0, None, True, 0.0)
+    assert core.recover == 2 and v < 0.0, "the car should be backing out"
+    travelled = 0.0
+    while core.recover and t < 20.0:
+        t += 0.02
+        travelled += abs(v) * 0.02
+        core.travel = travelled
+        v, _steer, _row = core.control(t, (travelled, 0.0, 0.0), -0.4, None, True, 0.0)
+    assert travelled <= cfg.adaptive.recover_distance_m + 0.2
+    assert core.recover == 0 and core.events["recovery"][-1]["kind"] == 2
+
+
+def test_it_creeps_instead_of_reversing_when_there_is_room_ahead():
+    from apex_fusion_research.core.race_config import RaceDriverConfig
+    from apex_fusion_research.core.race_driver import EXPLORE, RaceDriverCore
+    from apex_fusion_research.core.reactive import ReactiveCommand
+
+    core = RaceDriverCore(RaceDriverConfig(), 3)
+    core.phase = EXPLORE
+    core.cmd = ReactiveCommand(0.0, 0.0, np.zeros((0, 2)), False, {"free": 1.2})
+    t = 0.0
+    for _ in range(60):
+        t += 0.02
+        v, _s, _r = core.control(t, (0.0, 0.0, 0.0), 0.0, None, True, 0.0)
+    assert core.recover == 1 and v > 0.0
+
+
+def test_it_does_not_reverse_into_something_it_cannot_see():
+    """The LiDAR is blind behind the car. Without proven room back there the
+    car must stay where it is, exactly as it does today."""
+    from apex_fusion_research.core.race_config import RaceDriverConfig
+    from apex_fusion_research.core.race_driver import EXPLORE, RaceDriverCore
+    from apex_fusion_research.core.reactive import ReactiveCommand
+
+    core = RaceDriverCore(RaceDriverConfig(), 3)
+    core.phase = EXPLORE
+    core.cmd = ReactiveCommand(0.0, 0.0, np.zeros((0, 2)), False, {"free": 0.1})
+    core.rear_clear = 0.05
+    t = 0.0
+    for _ in range(120):
+        t += 0.02
+        v, _s, _r = core.control(t, (0.0, 0.0, 0.0), 0.0, None, True, 0.0)
+    assert core.recover == 0 and v == 0.0
+
+
+def test_the_margins_widen_while_the_car_is_unsure_and_return_after():
+    from apex_fusion_research.core.race_config import RaceDriverConfig
+    from apex_fusion_research.core.reactive import ReactiveDriver
+
+    cfg = RaceDriverConfig()
+    driver = ReactiveDriver(cfg.vehicle, cfg.reactive)
+    base_wall, base_soft = cfg.reactive.wall_margin_m, cfg.reactive.c_soft_m
+    driver.set_margins(0.05, 0.08)
+    for holder in (driver, driver.tracker, driver.planner, driver.wall_planner):
+        assert holder.cfg.wall_margin_m == pytest.approx(base_wall + 0.05)
+        assert holder.cfg.c_soft_m == pytest.approx(base_soft + 0.08)
+    driver.set_margins(0.0, 0.0)  # converged: back to the nominal car exactly
+    assert driver.planner.cfg.wall_margin_m == pytest.approx(base_wall)
+    assert driver.planner.cfg.c_soft_m == pytest.approx(base_soft)

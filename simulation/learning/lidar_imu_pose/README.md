@@ -487,6 +487,1015 @@ The live node applies the IMU delay only when the checkpoint was trained with it
 - **Latency:** +5–9 ms. A scan waits until the compensated IMU stamps cover its revolution.
 - **Test split:** evaluated once, after every choice was made on validation.
 
+## 7. Robustness to the real sensors: datasheet biases and arrival defects (v3 robust)
+
+**The problem.** The `APEX_real` profile of v2 took the IMU biases from the two real recordings and assumed perfect timing. The real car can be worse than that:
+
+- **Turn-on bias:** the LSM6DS3 datasheet allows a zero-rate level of ±10 °/s (0.17 rad/s). The profile drew with σ = 0.05 rad/s on z.
+- **Warm-up drift:** 0.05 °/s per °C (datasheet). A 20 °C rise gives ~0.017 rad/s, ~35 times the Gauss-Markov instability of the profile.
+- **Arrival:** the stamps come from USB and serial, so there is a constant offset per power-up, reception jitter, lost samples and lost revolutions.
+- **IMU rate:** today's car firmware delivers 55.6 Hz, not 104 Hz.
+
+On the v2 hybrid, the datasheet biases were the costly part. On the perturbed test runs with |b_z| > 0.1 rad/s, the rotation drift was 0.284 °/m instead of 0.039 °/m.
+
+Two causes were found:
+- **The network's gyro-bias state is bounded at 0.15 rad/s.**
+- **The ICP bias filter starts with σ = 0.03 rad/s.** Its 3σ innovation gate (~0.09 rad/s) rejects a larger bias for good.
+
+The Raspberry Pi's compute delay is **not** part of this step. Every result here runs on the PC. On the PC the estimator takes 22 ms per scan (~11 600 torch operations; the ICP's brute-force nearest neighbours on 360 × 1800 matrices dominate). A spec-based estimate for the Pi 4 gives ~165–400 ms against a 77 ms scan period, which calls for a smaller model later. Section 10 derives the budget for the current 10 Hz stack.
+
+**Changes.**
+
+- **Realism layer** (`sensors.yaml` `APEX_real`, `apex_fusion_research.core`). The live simulation and any new dataset use these values:
+
+  | Parameter | v2 | v3 | Source |
+  | --- | --- | --- | --- |
+  | Gyro turn-on bias σ (x, y, z) | 0.06, 0.08, 0.05 rad/s | 0.07, 0.10, 0.07 rad/s | ±10 °/s datasheet bound = 2.5σ; real y axis 0.103 rad/s |
+  | Warm-up drift (`imu.thermal`, new in `imu_chip`) | – | gyro 0.05 °/s/°C, accel 0.5 mg/°C (σ per axis); rise 10–25 °C, τ 300–900 s, random start point | LSM6DS3 datasheet; rise and τ assumed |
+  | Stamp offset per power-up (`timestamp.offset_std_ms`) | 0 | σ 3 ms, IMU and LiDAR drawn independently | USB CDC / serial |
+  | Stamp jitter (IMU / LiDAR) | 0.05 / 0.5 ms | 0.5 / 1.0 ms | host reception |
+  | IMU losses | 0 | 0.5 % isolated, 0.1 % bursts of 2–4 | USB hiccups |
+  | Lost revolutions | 0 | 1 % | serial hiccups |
+  | IMU mount tilt σ | 1.5° | 2.0° | real 3.1° apparent tilt at rest |
+
+  The thermal term and the offset use their own random streams, so every other draw of a seed is unchanged. The bias labels include the thermal term.
+
+- **Training augmentation** (`robustness.py`, `config/robust_real.yaml`). No new Gazebo campaign is needed. Every run of the v2 dataset gets perturbed copies, reproducible from (seed, run, variant):
+  - **Bias:** a constant top-up to the new bias spread, plus the warm-up drift read from the same `imu.thermal` block.
+  - **IMU timing:** a stamp offset of U(−8, 8) ms and jitter of 0–1 ms.
+  - **IMU losses:** 0–2 % isolated, 0–0.2 % bursts.
+  - **IMU rate:** a quarter of the runs keep every second sample (52 Hz).
+  - **Lost revolutions:** 0–2 %.
+
+  The same perturbation feeds `sqlite_windows` and `sqlite_streams`. The bias labels move with the added bias. The increment labels follow the scans that are kept: an interval over a lost revolution equals the composition of the two stored increments to 4e-8.
+- **ICP variant `submap_v3_real`:** `submap_v3` with a bias prior σ of 0.08 rad/s.
+- **Network:** the bias bounds (`StreamScales.bias_max`, stored in the checkpoint) go from (0.15 rad/s, 0.6, 0.6 m/s²) to (0.30, 1.0, 1.0). A 3° tilt plus the accelerometer bias reaches ~0.9 m/s². The architecture is unchanged (488 753 parameters).
+- **Training** (`--robust`, `--variants 2`): the plain runs plus 2 perturbed copies (585 training runs). Validation and test use the plain runs plus 1 copy. Otherwise it is the §6 recipe: 40 epochs, selection on validation segment drift. The best epoch is 38.
+- **Live simulation:**
+  - Stress options `--imu-offset-ms`, `--lidar-offset-ms` and `--gyro-bias-z-extra` in `apex_real2sim_up.sh`; they override the per-seed draws.
+  - The race driver stops when the last LiDAR-corrected estimate is older than `max_scan_age_s` (0.6 s). The pose used for control is propagated with the IMU, so its own age guard would not see an estimator that stopped using the LiDAR.
+
+```bash
+cd simulation/learning/lidar_imu_pose
+DB=../../data/multiscenario_pose/pose_dataset_v2.sqlite3 OUT=../outputs/real2sim_v3_robust
+ROB="--robust config/robust_real.yaml --variants 2"
+../.venv/bin/python train_streaming.py icp --icp submap_v3_real --imu-delay-comp --db $DB --out $OUT $ROB
+../.venv/bin/python train_streaming.py train --hybrid --icp submap_v3_real --sensors APEX_real --imu-delay-comp --sweep-profile \
+    --bias-max 0.30 1.0 1.0 --db $DB --out $OUT $ROB
+../.venv/bin/python evaluate_robust.py --db $DB --robust config/robust_real.yaml --out $OUT/evaluation \
+    --checkpoints v2_fast=../outputs/real2sim_v2_fast/hybrid_submap_v3/best_model.pt v3_robust=$OUT/hybrid_submap_v3_real/best_model.pt
+```
+
+Wall time on the RTX 4070 laptop: ICP 12 min, training 54 min, evaluation 10 min.
+
+### Results (`outputs/real2sim_v3_robust/`)
+
+Each model runs with its own classical odometry. "Perturbed" is one perturbed copy of every run (34 per split); the plain split is the §6 one.
+
+| Split | Model | Speed error | Segment drift | Rotation drift | Heading-rate error | Gyro-bias error |
+| --- | --- | --- | --- | --- | --- | --- |
+| Validation, plain | v2 fast (§6) | 3.01 cm/s | 0.80 % | 0.046 °/m | 0.232 °/s | 0.089 °/s |
+| Validation, plain | **v3 robust** | **2.14 cm/s** | **0.60 %** | **0.044 °/m** | **0.229 °/s** | **0.087 °/s** |
+| Validation, perturbed | v2 fast | 3.20 cm/s | 0.98 % | 0.075 °/m | 0.325 °/s | 0.166 °/s |
+| Validation, perturbed | **v3 robust** | **2.23 cm/s** | **0.63 %** | **0.049 °/m** | **0.273 °/s** | **0.098 °/s** |
+| Test, plain | v2 fast | 3.46 cm/s | 1.21 % | 0.039 °/m | 0.234 °/s | 0.098 °/s |
+| Test, plain | **v3 robust** | **2.30 cm/s** | **0.68 %** | **0.038 °/m** | **0.232 °/s** | **0.095 °/s** |
+| Test, perturbed | v2 fast | 3.89 cm/s | 1.78 % | 0.100 °/m | 0.385 °/s | 0.219 °/s |
+| Test, perturbed | **v3 robust** | **2.41 cm/s** | **0.72 %** | **0.042 °/m** | **0.278 °/s** | **0.107 °/s** |
+
+Perturbed test by condition (segment drift / rotation drift / heading-rate error):
+
+| Condition (runs) | v2 fast | v3 robust |
+| --- | --- | --- |
+| \|b_z\| > 0.1 rad/s (8) | 3.06 % / 0.284 °/m / 0.669 °/s | **0.65 % / 0.047 °/m / 0.250 °/s** |
+| 0.05–0.1 rad/s (12) | 1.27 % / 0.037 °/m / 0.216 °/s | **0.70 % / 0.034 °/m / 0.212 °/s** |
+| < 0.05 rad/s (14) | 1.54 % / 0.052 °/m / 0.382 °/s | **0.80 % / 0.046 °/m / 0.367 °/s** |
+| IMU at 104 Hz (25) | 2.09 % / 0.116 °/m / 0.378 °/s | **0.78 % / 0.041 °/m / 0.246 °/s** |
+| IMU at 52 Hz (9) | 0.77 % / 0.048 °/m / 0.410 °/s | **0.53 % / 0.042 °/m / 0.388 °/s** |
+
+- **The large-bias failure is gone.** With the datasheet-size bias, v3 keeps the rotation drift of the easy cases (0.047 °/m against 0.284 °/m).
+- **The plain splits improve too:** test segment drift 1.21 → 0.68 %, speed error 3.46 → 2.30 cm/s. The three-times larger and more varied training set is the likely reason. There is one seed per network.
+- **At 52 Hz the heading-rate error is higher for both models** (~0.39 °/s): half the gyro samples per sweep. The drift stays low, so a 104 Hz firmware is still the target but not a hard requirement.
+- **Test split:** evaluated once, after every choice was made on validation.
+
+**Closed loop** (Gazebo, `test_unseen`, `medium`, 3 laps, race driver, the v3 realism profile; on the PC, CPU estimator). Seed 7 draws an IMU offset of −5.5 ms and a LiDAR offset of +4.3 ms. The stress runs override the draws: `--gyro-bias-z-extra 0.17` adds the datasheet bound on top of the drawn bias, and `--imu-offset-ms 8 --lidar-offset-ms 0` sets the stamp offsets.
+
+| Seed / stress | Model | Lap times | Min clearance lap 1 / race laps | Belief error p95 | Segment drift | Rotation drift |
+| --- | --- | --- | --- | --- | --- | --- |
+| 7 | v2 fast | 46.2, 20.8, 23.4 s | 0.129 / 0.156 m | 0.49 m | 0.99 % | 0.060 °/m |
+| 7 | **v3 robust** | 48.5, 21.0, 24.6 s | 0.136 / 0.155 m | **0.33 m** | 1.06 % | 0.065 °/m |
+| 8 | v2 fast | 45.4, 24.1, 23.2 s | 0.280 / 0.134 m | 0.49 m | 1.33 % | 0.067 °/m |
+| 8 | **v3 robust** | 45.4, 23.3, 23.9 s | 0.222 / 0.147 m | **0.34 m** | 1.52 % | 0.061 °/m |
+| 7, bias +0.17 rad/s | v3 robust | 49.3, 20.9, 23.3 s | 0.082 / 0.140 m | 0.49 m | 1.21 % | 0.052 °/m |
+| 7, IMU +8 ms | v2 fast | 47.4, 20.5, 23.5 s | 0.132 / 0.188 m | 0.53 m | 0.99 % | 0.065 °/m |
+| 7, IMU +8 ms (two runs) | v3 robust | 48.7, 20.7, 24.1 / 47.4, 21.1, 23.6 s | 0.095 / 0.124, 0.123 / 0.147 m | 0.77 / 0.39 m | 1.64 / 1.10 % | 0.062 / 0.056 °/m |
+| 7, bias + IMU offset | v2 fast | 48.3, 21.5, 26.2 s | 0.123 / 0.146 m | 0.47 m | 0.96 % | 0.042 °/m |
+| 7, bias + IMU offset | v3 robust | 46.4, 22.8, 23.6 s | 0.130 / 0.160 m | 0.44 m | 1.21 % | 0.045 °/m |
+
+- **Every run completed the 3 laps.** The scan-age guard never stopped the car. The estimator latency was 155–164 ms p50 and 173–183 ms p95.
+- **The belief error is lower with v3** on the unstressed runs: 0.33 m against 0.49 m on both seeds.
+- **Odometry drift in closed loop is similar** for the two models (1.0–1.5 %). On this track the scan-to-submap ICP keeps v2 on course even when its bias filter rejects a large bias. The difference is clear only over the 34 runs of the offline evaluation.
+- **The worst values of the stress runs are within the run-to-run spread:**
+  - The first IMU +8 ms run (belief 0.77 m, 9.5 cm clearance) did not repeat: the second run gave 0.39 m and 12.3 cm.
+  - The only clearance below 10 cm (8.2 cm, bias run) is in lap 1, the reactive exploration. The race laps stay at 12 cm or more.
+- **Heading-rate error per interval:** 0.29–0.42 °/s, against 0.23 °/s under the v2 profile. It comes from the new 1 ms LiDAR stamp jitter: the gyro is integrated over the reported interval, not the true one. The heading drift per metre does not change.
+
+## 8. The A2M8 at 4 kHz (Express scan): dataset v3 and the v4 hybrid
+
+**Why 4 kHz.** The LiDAR of the car cannot be changed physically, and its firmware is unknown.
+
+- **Today's driver:** the python `rplidar` library of the car uses the 2 kHz compatible protocol.
+- **Every A2M8 does 4 kHz:** the first A2M8 datasheet (v1.0, 2017) gives 4000 samples/s as the typical rate with the high-speed protocol, and the SDK enables the express scan from firmware 1.17.
+- **8 kHz is not guaranteed:** the Sensitivity mode needs firmware ≥ 1.24.
+
+The design target is therefore the Express scan at 4 kHz, reached with a driver change only (SDK / `rplidar_ros`, `scan_mode` Express).
+
+At 13 Hz that is ~307 samples in 360 one-degree bins. With the 12 % base dropout measured on the real car, ~195 bins per revolution have a return; the Sensitivity mode of v2 gave ~252.
+
+**What broke.** The ICP computed a normal only where 5 consecutive bins all had a return. At 4 kHz most patches have an empty bin:
+
+- **Classical odometry alone** (v3 validation): the segment drift rises to 30 %.
+- **The §6 and §7 hybrids** (trained at 8 kHz): 101–120 % on the v3 test split.
+- **Closed loop with the §7 model at 4 kHz:** on seed 7 it hit a curb in lap 2 (9.1 % drift). Seed 8 finished with 5.2 % drift and 0.18 °/m rotation drift, three times worse than at 8 kHz.
+- **The same rule on the real 2 kHz recordings:** not a single normal.
+
+**Changes.**
+
+- **`sensors.yaml`:**
+  - `APEX_real` becomes the A2M8 in Express scan: `sample_rate_hz` 4000, base dropout 0.12 as measured in the standard mode.
+  - The Sensitivity profile of v2 is kept as `APEX_real_sensitivity`; `APEX_real_compat` stays at 2 kHz.
+  - The §7 realism is unchanged.
+- **Dataset v3** (`campaign.yaml` `full_v3`, `data/multiscenario_pose/pose_dataset_v3.sqlite3`):
+  - The `full_v2` tracks, motions and seeds, regenerated in Gazebo with the v3 `APEX_real`. The datasheet bias, warm-up drift, stamp offsets, jitter and losses are now native, not only augmentation.
+  - 263 runs (195 / 34 / 34), all QA checks passed.
+  - The QA timestamp check now separates the constant offset (within 5σ of the per-power-up draw) from the jitter. The old check rejected every run with a drawn offset.
+- **ICP variant `submap_v4`** (`line_normals(window, min_points)`, `IcpConfig.normal_window` / `normal_min_points`):
+  - A normal needs 4 of the 5 beams of its ±2-bin patch, on the same surface.
+  - Chosen on the v3 validation split, ICP only:
+
+    | Normal rule | Segment drift |
+    | --- | --- |
+    | 5 of 5 (historical) | 30 % |
+    | **4 of 5** | **2.34 %** |
+
+  - Rejected on the dense v2 scans (4–5 % against 2.0 %): 3 of 5, and ±3-bin patches, which rotate the normals by ~1.7°.
+  - The historical rule is unchanged for the older variants.
+- **Training:** the §7 recipe on dataset v3, with 2 perturbed copies per run (`config/robust_v3.yaml`).
+  - The copies add only the arrival defects beyond the profile: an extra IMU offset of U(−8, 8) ms, jitter, IMU losses, 52 Hz IMU and lost revolutions.
+  - There is no bias top-up and no thermal term, because they are native in v3.
+  - 40 epochs; the best epoch is 36.
+
+```bash
+cd simulation/learning/lidar_imu_pose
+DB=../../data/multiscenario_pose/pose_dataset_v3.sqlite3 OUT=../outputs/real2sim_v4_express
+ROB="--robust config/robust_v3.yaml --variants 2"
+python3 ../../tools/generate_pose_dataset.py --preset full_v3 --database $DB --workers 6   # clean environment, see tools/pose_dataset/README.md
+../.venv/bin/python train_streaming.py icp --icp submap_v4 --imu-delay-comp --db $DB --out $OUT $ROB
+../.venv/bin/python train_streaming.py train --hybrid --icp submap_v4 --sensors APEX_real --imu-delay-comp --sweep-profile \
+    --bias-max 0.30 1.0 1.0 --db $DB --out $OUT $ROB
+../.venv/bin/python evaluate_robust.py --db $DB --robust config/robust_v3.yaml --out $OUT/evaluation --checkpoints \
+    v2_fast=../outputs/real2sim_v2_fast/hybrid_submap_v3/best_model.pt v3_robust=../outputs/real2sim_v3_robust/hybrid_submap_v3_real/best_model.pt \
+    v4_express=$OUT/hybrid_submap_v4/best_model.pt
+```
+
+Wall time: dataset ~2.3 h (6 workers), ICP 13 min, training 54 min.
+
+### Results (`outputs/real2sim_v4_express/`)
+
+Dataset v3, 4 kHz. Each model runs with its own classical odometry. "Perturbed" adds one `robust_v3` copy of every run.
+
+| Split | Model | Speed error | Segment drift | Rotation drift | Heading-rate error | Gyro-bias error |
+| --- | --- | --- | --- | --- | --- | --- |
+| Validation, plain | v2 fast (§6, 8 kHz) | 115 cm/s | 118 % | 0.151 °/m | 0.510 °/s | 0.291 °/s |
+| Validation, plain | v3 robust (§7, 8 kHz) | 37.7 cm/s | 22.2 % | 0.112 °/m | 0.450 °/s | 0.185 °/s |
+| Validation, plain | **v4 express** | **3.61 cm/s** | **0.85 %** | **0.054 °/m** | **0.371 °/s** | **0.110 °/s** |
+| Test, plain | v2 fast | 113 cm/s | 101 % | 0.373 °/m | 0.790 °/s | 0.514 °/s |
+| Test, plain | v3 robust | 118 cm/s | 120 % | 0.232 °/m | 0.596 °/s | 0.341 °/s |
+| Test, plain | **v4 express** | **3.88 cm/s** | **1.19 %** | **0.050 °/m** | **0.386 °/s** | **0.113 °/s** |
+| Test, perturbed | v3 robust | 86.8 cm/s | 88.6 % | 0.205 °/m | 0.654 °/s | 0.318 °/s |
+| Test, perturbed | **v4 express** | **3.93 cm/s** | **1.20 %** | **0.058 °/m** | **0.459 °/s** | **0.118 °/s** |
+
+- **The v4 hybrid is robust within the new target.** On the perturbed test split its segment drift is 0.82–1.43 % in every group: |b_z| > 0.1 rad/s gives 1.12 % and the 52 Hz IMU 0.85 %.
+- **4 kHz costs accuracy against 8 kHz.** The §7 model at 8 kHz on the v2 test split gave 2.30 cm/s and 0.68 %; v4 at 4 kHz on the v3 test gives 3.88 cm/s and 1.19 %. The two splits differ, and v3 also carries the widened realism natively.
+- **The earlier checkpoints must not be used with a 4 kHz LiDAR at 13 Hz.**
+
+**Closed loop at 13 Hz** (Gazebo, `test_unseen`, 3 laps):
+
+- **The odometry was right:** 1.1–2.3 % drift in every run.
+- **Lap 1 is fragile:** the reactive exploration ran over an invisible curb on seeds 8 and 9, reproducibly. The planned laps were never the problem.
+- **What was tried** on the reactive driver (`--driver-set`): cluster distance 0.25 / 0.30 m, lateral wall window 2.1 / 2.4 m, exploration at 1.1 / 1.2 m/s. Each change moved the failure to another seed.
+- **What stays:** `cluster_eps_m` 0.25, which fixed seed 8 and one 2D-harness case at 4 kHz without a cost at 8 kHz.
+
+## 9. The A2M8 at 10 Hz: dataset v4 and the v5 hybrid
+
+**Why 10 Hz.** The A2M8 takes the same 4000 samples per second at any rotation speed, so turning slower puts more of them in each revolution:
+
+| Rotation | Samples per revolution | Bins with a return (dataset) | Normals, 5-of-5 rule (ICP only, validation) |
+| --- | --- | --- | --- |
+| 13 Hz | ~307 | ~194 | 30 % segment drift |
+| 10 Hz | 400 | ~230–250 | 1.75 % |
+
+- **10 Hz is the typical rate of the A2M8** (600 rpm) and the motor speed `rplidar_ros` sets for the A series. It is a driver setting; the sensor is unchanged.
+- **Cost:** a correction every 100 ms instead of 77 ms, which the IMU propagation bridges, and 35 cm of travel per revolution at 3.5 m/s, which the de-skew handles.
+
+**Changes.**
+
+- **`sensors.yaml`:**
+  - `APEX_real` turns at 10 Hz.
+  - `APEX_real_express13` is the 13 Hz profile of dataset v3.
+  - `APEX_real_compat` and `APEX_real_sensitivity` keep the 13.03 Hz of today's car driver.
+  - `APEX_real_lowdrop_diag` is a diagnostic profile, not a target: 10 Hz with the 3 % dropout rate of the Sensitivity mode.
+- **Dataset v4** (`full_v4`, `data/multiscenario_pose/pose_dataset_v4.sqlite3`): 263 runs, all QA checks passed.
+- **Other settings:** `race_config.reactive.lidar_period_s` becomes 1/10. The 2D harness gets `--scan-hz` (default 10), `--lidar-sample-hz` and `--dropout`.
+- **ICP:** `submap_v4`. On v4 validation, ICP only, "4 of 5" gives 1.65 % against 1.75 % for the historical rule.
+- **Training:** the §8 recipe, 40 epochs, best epoch 38 (validation 0.73 %), in `outputs/real2sim_v5_10hz/hybrid_submap_v4/`.
+
+### Results (`outputs/real2sim_v5_10hz/`)
+
+**Offline** (dataset v4, 10 Hz; each model with its own ICP):
+
+| Split | v3 robust (§7, 8 kHz / 13 Hz) | v4 express (§8, 4 kHz / 13 Hz) | **v5 (4 kHz / 10 Hz)** |
+| --- | --- | --- | --- |
+| Test plain: speed error / segment drift / rotation drift | 4.21 cm/s / 1.77 % / 0.067 °/m | 3.91 cm/s / 1.51 % / 0.051 °/m | **3.22 cm/s / 0.93 % / 0.048 °/m** |
+| Test perturbed | 4.33 cm/s / 1.78 % / 0.070 °/m | 3.90 cm/s / 1.40 % / 0.054 °/m | **3.31 cm/s / 0.96 % / 0.051 °/m** |
+| Perturbed, \|b_z\| > 0.1 rad/s | 1.47 % / 0.096 °/m | 1.02 % / 0.056 °/m | **0.71 % / 0.058 °/m** |
+
+**Closed loop** (Gazebo, `test_unseen`, 3 laps, lap 1 reactive; "fail" = lap 1 ran over an invisible curb):
+
+| Sensor | Model | Seed 6 | 7 | 8 | 9 | 10 | 11 | 12 | 7 + bias 0.17 + IMU +8 ms |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 4 kHz / 10 Hz, 12 % dropout (`APEX_real`) | v5 | ok | ok | ok | fail ×3 | ok | fail | fail | ok |
+| 4 kHz / 10 Hz, 12 % dropout | v3 robust | – | – | ok | ok, ok, fail | – | ok | fail | – |
+| 4 kHz / 10 Hz, 3 % dropout (diagnostic) | v5 | – | – | – | fail | – | ok | ok (2.9 cm in a race lap) | – |
+| 8 kHz / 13 Hz, 3 % dropout (`APEX_real_sensitivity`) | v3 robust | – | – | – | ok | – | ok | ok | – |
+
+- **Odometry in closed loop:** v5 drifts 0.6–1.5 % over 10 runs, median 1.1 %. v3 robust on the same 10 Hz sensor drifts 0.6–4.3 % over 6 runs, median 2.2 %.
+- **Every failure is in lap 1, at one of two corners** (curbs `right3_3/4` and `right3_64/65`). There the outer edge is a curb the LiDAR cannot see; at the seed-9 corner the car turns left too late. The race laps on the planned line did not fail.
+- **The missing-return rate matters most.** 12 % is measured on the real car in the standard mode and assumed for the Express scan. With 3 %, seeds 11 and 12 pass. Seed 9 still fails with v5 at 10 Hz; it passes at 8 kHz / 13 Hz.
+- Every lap-1 failure was in the reactive driver, not in the estimator.
+
+### The driver fixed, and v5 made the default (2026-09-28)
+
+v5 is now the default checkpoint of the live simulation. It is the last trained model and the one for the sensor the real car will have. Three failure mechanisms were found and fixed in the driver, not in the model. Each fix uses only what the real car has (the de-skewed LiDAR, its own odometry and the `w_min` prior). Details: `ros2_ws/src/apex_fusion_research/README.md` §13.1.
+
+1. **Invisible curb at the end of a wall (lap 1).** At both corners the outer wall ends and becomes a curb. The inner wall turns away from the car, so the LiDAR sees its continuation edge-on: a few scattered returns until the apex. The planner constrained only the points beside the followed wall, so beyond its end going straight cost nothing. **Fix: the proven lane.** A point is proven to be in the lane when a wall lies beside it within the `w_min` bound, or when it lies between two walls. Sparse returns chained to a wall count too. Paths are scored by their proven length, and the speed is capped so the car could stop before the end of the proven lane.
+2. **Wheel shadow in the local cloud (lap 1).** A front wheel hides ~20° beside the car. Carving treated "no return" there as free space, erased the wall the car had just passed, and split it; the driver lost it. **Fix:** a per-beam return rate. No return carves only on beams that usually return.
+3. **Race line too close to an invisible curb (laps 2–3).** The blind-side margin was 0.10 m. That edge comes from the `w_min` prior, not from a measurement, and the belief error at 3 m/s reaches 0.10–0.15 m. **Fix:** `planner.blind_margin_m` = 0.20. In the 2D harness over 20 seeds, the smallest race clearance went from 15 to 23 cm, at the same lap time.
+4. **Tooling.** Every run writes `driver_inputs.csv`. `tools/analysis/replay_reactive.py` replays the lap-1 driver on it offline, with modified parameters (`--set`), and draws the proven lane (`--plot`). It reproduces the Gazebo decisions exactly: a change is screened in seconds, then confirmed in Gazebo.
+
+| Configuration (4 kHz / 10 Hz, 12 % dropout, v5) | Result on `test_unseen`, 3 laps | Lap 1 |
+| --- | --- | --- |
+| Driver before the fixes | seed 9: 5/5 fail; seeds 11, 12: fail or pass depending on the run | 45–53 s |
+| Lap-1 speed lowered to 1.1 m/s, no proven lane | seed 9: 1/2 | 61 s |
+| Proven lane (fix 1) | 11/12 (seeds 6–15, 9 twice, stress run); every lap 1 passed, seed 12 hit a curb in race lap 2 | 46–64 s |
+| **Fixes 1–3 (default)** | **13/13** (seeds 6–15, 9 and 12 twice, seed 7 + 0.17 rad/s + 8 ms); smallest clearance 7.9 cm | **45–51 s** |
+
+**Open items.**
+- **Map quality on some seeds.** The race line is only as good as the slam_toolbox map. On seed 10 the lap-closure correction reaches 1 m. The race corridor is then only 71 % sound: the line's true clearance was 0.7 cm, although the car completed. One run under extra CPU load missed its lap closure and hit a curb in lap 5. Seeds 7 and 15 have 83–94 % sound corridors.
+- **Missing-return rate of the Express scan on the real car.** Measure it on the car. 12 % is the standard-mode figure.
+- **Sensitivity mode.** If the car's A2M8 reports firmware ≥ 1.24, 8 kHz / 13 Hz with the §7 model is also available (`--sensor APEX_real_sensitivity`).
+
+## 10. Pi 4 compute budget: how much latency the Pi may add (2026-09-29)
+
+On the PC the estimator costs ~28 ms per scan against a 100 ms scan period, so its latency is harmless in the simulation. On the car it runs on a Raspberry Pi 4 (4 × Cortex-A72 at 1.5 GHz, 1 MB shared L2, fan). This section defines how that cost is measured, how it is projected to the Pi, and the requirement a model must meet there. No model was trained.
+
+**Files.**
+
+| File | Role |
+| --- | --- |
+| `latency_profile.py` | Measurement; portable (torch + numpy, no ROS). Subcommands: `export` (replay .npz from the dataset), `profile` (time per scan and per stage, op census), `calibrate` (micro-benchmarks per cost class), `sweep` (latency against network size with random weights, and against the ICP settings), `live` (real-time replay with the node's two threads on one core), `dr` (error of the control pose against its age), `simref` (latency of the validated closed-loop runs), `bundle` (archive for the Pi). |
+| `pi4_budget.py` | The derivation: every constant tagged with its source, one documented function per step. `report` writes `config/pi4_budget/budget.json` and `budget_report.md`; `check --profile X.json` gives the verdict for any candidate. |
+| `ros_callback_bench.py` | Python cost of the node's ROS messages (`_handle`, IMU callback); rclpy only. |
+| `config/pi4_budget/*.json` | The measurements (tracked). |
+| `tests/test_pi4_budget.py` | Tests for the queue, the R2 inversion, the verdicts, the cost split, the MAC count, `propagate_imu` and `pair_widths`. |
+
+**How a scan's time is split.** A scan's PC time is divided into five classes, and each scales to the Pi by its own factor:
+- **compute:** convolutions.
+- **mem_cache:** batch-1 GEMVs and element-wise work below 0.5 MB.
+- **mem_dram:** operations above 0.5 MB, which on the Pi spill past L2. The submap cdist of 360 × 1800 = 2.6 MB is one of them.
+- **dispatch:** top-level torch calls × the measured cost of a small op.
+- **python:** the rest.
+
+Until the Pi is measured, the factors come from a spec band built in code (low / nominal / high):
+- clock 4.8 / 1.5 GHz times the per-clock ratio (the Geekbench 6 single-core ratio, 2400 / 340 = 7.1, falls inside the band);
+- the A72's FP32 peak for compute;
+- SIMD width and the Pi's single LPDDR4 channel for memory.
+
+**Measured on the PC** (1 thread, pinned; replay of 10 fast validation runs, 3428 scans; `profile_pc.json`):
+
+| Stage | PC ms | Pi ms, replay (low / nominal / high) |
+| --- | --- | --- |
+| ICP (scan-to-scan + submap + rest) | 16.7 | 108 / 154 / 233 |
+| Network (0.49 M parameters) | 2.62 | 16 / 20 / 28 |
+| Preprocessing, de-skew, glue | 1.3 | 8 / 10 / 13 |
+| **Total per scan** | **20.6** (p50 19.4, p95 27.2, p99 32.0) | **132 / 184 / 273** |
+
+- A scan makes 3453 top-level torch calls (~11.8k with the nested ones).
+- The PC's cost is mostly the cdist (real work) plus dispatch and Python.
+- The same measurement earlier that day gave 28.7 ms (p50 28.0) with the laptop in a slower state. The Pi projection scales with it: 182 / 250 / 367 ms. The budget does not.
+- **Periodic regime.** `profile` replays scans back to back. In the node, a scan arrives every 100 ms after the two threads and the IMU callbacks have run: caches and branch predictors are cold, and the laptop drops its clock while idle. `live --keep-warm` keeps the core busy so that only the first effect remains, and measures the node's service at 1.29× the replay (cdist) and 1.47× (polar ICP, §11). Without `--keep-warm` it doubles again, which is why the Pi must run the `performance` CPU governor.
+
+**The requirement** (`budget_report.md`). The node runs every scan in a FIFO that never drops one: the network is recurrent and was trained at dt = 0.1 s. Its IMU callback (104 Hz, `predict()` in Python) shares the GIL with the scan worker. Three conditions follow:
+
+| Condition | Statement | Limit |
+| --- | --- | --- |
+| R1 utilisation of the estimator's core | (S_node·k_cont + S_handle) / T + u_imu ≤ 0.70, with S_node = S_replay × the periodic factor (Kingman: the wait grows as ρ/(1−ρ)) | **binding** |
+| R2 freshness of the control pose | The pose is dead-reckoned on the IMU for T + L. `dr` measured its p95 cross-track error: 2.3 / 4.2 / 9.8 / 22.8 cm at 0.2 / 0.3 / 0.5 / 0.8 s (v ≥ 2.5 m/s), almost independent of speed (accelerometer integration). Allowed: 2.5 cm more than at the validated latency (p95 197 ms), i.e. half of what the 0.20 m blind margin leaves after the 0.10–0.15 m belief error. | latency p95 ≤ 297 ms |
+| G scan-age guard | 2T + L_p99 ≤ 0.6 s (one lost revolution) | latency p99 ≤ 400 ms |
+
+At the bound, the queue model (Lindley recursion over the measured jitter, 1 % lost revolutions and the IMU coverage wait) gives:
+- latency p95 ≈ 200 ms and one pending scan at most;
+- u_imu = 8–13 % of the core.
+
+`live` checked the queue model against real threads (see the report): p50 and p95 match within 2 ms, while the live p99 is higher.
+
+> **Requirement:** on the Pi 4 (one thread, fan, `performance` governor), the estimator's service per scan as it runs in the node must be **≤ 43 ms on average**. That is the pessimistic end of the band (nominal 54 ms, optimistic 61 ms), with p95 ≤ 57 ms and p99 ≤ 67 ms for today's jitter. On a back-to-back replay (`latency_profile.py profile`), divide by the periodic factor: 33 ms for today's pipeline, 29 ms for the polar ICP. The latency must stay at p95 ≤ 297 ms and p99 ≤ 400 ms, and no single operation should touch more than 0.5 MB. On the PC (1 thread, replay) this is about **2.5–7.4 ms** for a pipeline of today's class mix (nominal 4.7 ms), against 20.6 ms today. `pi4_budget.py check` is the authoritative test: it applies the factor of the candidate's own ICP backend.
+
+**What it means for the next step.**
+- **The current model misses the budget by 2.8–8.2×** (nominal 4.4×): FAIL even with the optimistic factors.
+- **The parameter count is not the lever, at this size and in eager PyTorch.**
+  - The network sweep with random weights runs 48 sizes from 55 k to 5.9 M parameters. Every size executes the same 417 top-level ops.
+  - PC latency: 3.7 ms + 1.1 ms per million parameters.
+  - Pi latency: a floor of 22–35 ms + 7–18 ms per million parameters.
+  - Shrinking the v5 network to zero parameters would save ~4–9 ms. The op count alone takes 35–80 % of the budget.
+  - The latency follows the parameter count better than the MACs (R² 0.85 against 0.52), because batch-1 GEMVs stream their weights every scan.
+- **The ICP is 80 % of the cost, and no ICP setting fits.**
+  - The ICP settings of the sweep are latency only, since any change means retraining.
+  - The leanest combination (4 GN iterations, 1 de-skew pass, 2 map iterations, 3 keyframes) still costs 122–216 ms on the Pi.
+  - With no ICP at all, the pure network costs 48–81 ms, and 39 / 18 / 0 of the 48 sizes fit (low / nominal / high).
+  - What has to change is **the number of torch calls and the brute-force cdist**: a projective association on the 360 bins, a compiled ICP, or an exported network (TorchScript / ONNX Runtime). Changing the width of the layers does not help. Section 11 replaces the cdist with a compiled polar search.
+- **The IMU callback takes 8–13 % of the core.** `predict()` re-walks the samples since the last scan on every IMU message. Propagating incrementally in O(1) is a free gain.
+- **The whole Pi does not fit either**, at nominal factors:
+  - the lap-1 reactive planner of the race driver (34 ms per scan on the PC) projects to ~2.6 cores;
+  - the estimator today projects to 2.9 cores;
+  - only 4 × 0.7 = 2.8 are available.
+
+**On the Pi.** `python latency_profile.py bundle` writes `outputs/pi4_budget/pi4_bundle.tar.gz` (7 MB). It holds the sources, a replay, the checkpoint, the PC measurements and `RUN_ON_PI.md`. Run `calibrate` (idle, and with `--background 3`), then `profile`, `live` and `ros_callback_bench.py` there. Copy the `*_pi4*.json` files back to `config/pi4_budget/` and run `python pi4_budget.py report`. The measured factors then replace the spec band, and the verdict stops being a band.
+
+**Recompute on the PC.**
+
+```bash
+cd simulation/learning
+.venv/bin/python lidar_imu_pose/latency_profile.py export                                   # replay_validation.npz (34 runs)
+.venv/bin/python lidar_imu_pose/latency_profile.py export --match __high__ __variable__ --out outputs/pi4_budget/replay_pi.npz
+.venv/bin/python lidar_imu_pose/latency_profile.py calibrate --cpu 2 --tag pc
+.venv/bin/python lidar_imu_pose/latency_profile.py profile --cpu 2 --tag pc                 # ~2 min
+.venv/bin/python lidar_imu_pose/latency_profile.py sweep --cpu 2 --tag pc                   # ~12 min
+.venv/bin/python lidar_imu_pose/latency_profile.py dr --workers 4                            # ~5 min
+.venv/bin/python lidar_imu_pose/latency_profile.py simref
+.venv/bin/python lidar_imu_pose/latency_profile.py live --cpu 2 --runs 0 --seconds 28 --scale 2.5 --tag pc_scale2.5
+(source /opt/ros/jazzy/setup.bash; .venv/bin/python lidar_imu_pose/ros_callback_bench.py --tag pc)
+.venv/bin/python lidar_imu_pose/pi4_budget.py report
+```
+
+Pinning to one CPU matters in WSL, where the 155H's P, E and LP-E cores make timings drift. `profile` records a reference micro-benchmark before and after each run; the PC run drifted 24 %, while p50 matched a separate run within 1.5 %. Repeated sweep points vary by ~15 %.
+
+**Knobs added for the next step:**
+- `StreamingPoseNet(pair_widths=...)`: the channels of the four scan-pair convolutions, stored in the checkpoint config.
+- `train_streaming.py --hidden --pair-widths`.
+- `live_odometry.propagate_imu`: the dead reckoning of `predict()`, now reusable.
+
+The default layout is unchanged: the v5 checkpoint loads strictly.
+
+## 11. Polar ICP: the classical odometry compiled for the Pi (2026-09-29)
+
+Section 10 showed that the ICP is ~80 % of the estimator's Pi cost. Two things make it expensive:
+- the brute-force `torch.cdist` against all target points (a 2.6 MB matrix against the submap);
+- ~2800 small torch calls per scan.
+
+`polar_icp.py` keeps the algorithm and replaces how it is executed.
+
+**What changed.**
+- **Search.** The target points are indexed by their bearing from the LiDAR origin: 360 bins, one counting sort per pass. The search for a point at range ρ visits the bins outwards from its bearing. It stops when the bearing offset alone guarantees that nothing closer remains: a point Δθ away in bearing is at least ρ·sin Δθ away. This is the **exact** nearest neighbour within the gate, the same one `cdist(...).min()` returns whenever the pair is used, and it usually costs a handful of candidates instead of 360 or 1800.
+- **Execution.** Everything else is a line-by-line port of `IcpStream.step` for one lane, compiled with numba in float64:
+  - the de-skew (constant rate or gyro heading profile) and both line-normal rules;
+  - the robust point-to-line Gauss-Newton with the IMU prior, scan-to-scan then scan-to-submap with the agreement test;
+  - keyframes, covariance and degeneracy indicators;
+  - the gyro-bias Kalman filter and the standstill update.
+
+  The 2 × 2 and 3 × 3 algebra is closed form, so the car needs neither LAPACK nor SciPy, only numba.
+- **Selection.** Nothing changes by default: the default backend is still `cdist`. The polar backend is selected by:
+  - `IcpConfig(association="polar")`, i.e. `ICP_VARIANTS["<variant>_polar"]` for every variant;
+  - `LiveOdometry(icp_backend="polar")`;
+  - the node parameter `icp_backend`;
+  - the launch argument `icp_backend`;
+  - `apex_real2sim_up.sh --icp-backend polar`.
+- **Dataset path.** `run_icp` with a polar variant runs the whole split in threads: 2 s per split against 58–82 s for the GPU torch version.
+
+**Equivalence.**
+- `tests/test_polar_icp.py`:
+  - the search matches brute force exactly (random points, wrap-around, points near the origin, empty index);
+  - a stream of synthetic rolling scans in a room with pillars matches `IcpStream` run in float64 within 1e-6 for `scan`, `submap_v3` (5-point normals) and `submap_v4`.
+- **On a real replay**, against `IcpStream` in float64, the worst increment difference is 1.4e-8 m over 78 intervals, with the state (velocity, bias, keyframes) evolving.
+- **Against the float32 torch cache the v5 network was trained on** (19 939 test intervals), the differences are the rounding of the reference: its cdist expands |a|² + |b|² − 2ab in float32 and loses about 1 mm on small distances.
+  - Increment: p50 0.18 mm, p99 3.9 mm.
+  - The standstill flag flips on 1 interval and the submap choice on 0.025 %.
+
+**Accuracy: the v5 network, unchanged, on the polar ICP** (`evaluate_robust.py --icp-association polar`, `outputs/real2sim_v6_polar/`). The `cdist` column is recomputed in the same run and reproduces the published v5 figures exactly.
+
+| Split | Classical alone, cdist → polar (speed error / segment drift) | v5 hybrid, cdist → polar (speed error / segment drift) |
+| --- | --- | --- |
+| validation | 8.63 → 8.61 cm/s / 1.646 → 1.645 % | 3.04 → 3.03 cm/s / 0.710 → 0.706 % |
+| validation, perturbed | 8.66 → 8.64 / 1.713 → 1.709 % | 3.15 → 3.15 / 0.756 → 0.756 % |
+| test | 9.12 → 9.11 / 2.757 → 2.749 % | 3.22 → 3.23 / 0.925 → 0.929 % |
+| test, perturbed | 9.23 → 9.22 / 2.833 → 2.814 % | 3.31 → 3.31 / 0.957 → 0.953 % |
+
+The v5 network needs no retraining: it keeps its accuracy with the polar ICP, and the standard checkpoint is untouched.
+
+**Closed loop in Gazebo.** Same configuration as the validated runs (`test_unseen`, `medium`, race driver, 3 laps), with `--icp-backend polar`:
+
+| Run (`data/real2sim/`) | ICP | Result | Lap times (s) | Min clearance (m) | Odometry: speed error / segment drift / heading drift | Lap-1 odometry error p95 (m) | Belief p95, lap 1 / race (m) | SLAM ATE (m) | Estimator compute in Gazebo, p50 (ms) | RTF |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `fin_s7_both` | cdist | 3 laps | 48.3 / 21.8 / 23.8 | 0.10 | 3.38 cm/s / 1.06 % / 0.072 °/m | 1.08 | 0.34 / 0.19 | 0.15 | 61.8 | 0.56 |
+| `fin_s7` | cdist | 3 laps | 48.7 / 22.5 / 23.9 | 0.13 | 3.67 / 1.23 / 0.062 | 0.52 | 0.41 / 0.35 | 0.22 | 62.5 | 0.57 |
+| `polar_s7` | polar | 3 laps | 47.4 / 21.1 / 24.1 | 0.10 | 3.46 / 0.85 / 0.056 | 0.31 | 0.94 / 0.27 | 0.34 | 14.4 | 0.70 |
+| `polar_s7_r2` | polar | 3 laps | 48.1 / 21.6 / 23.8 | 0.13 | 3.43 / 1.03 / 0.065 | 0.46 | 0.56 / 0.26 | 0.20 | 13.6 | 0.69 |
+| `polar_s7_loaded` (2 busy processes) | polar | 3 laps | 48.7 / 21.7 / 23.8 | 0.13 | 3.26 / 0.97 / 0.065 | 0.87 | 0.32 / 0.35 | 0.21 | 13.9 | 0.67 |
+| `fin_s9` | cdist | 3 laps | 47.6 / 22.0 / 23.9 | 0.11 | 3.00 / 1.04 / 0.052 | 0.38 | 0.31 / 0.23 | 0.17 | 62.7 | 0.62 |
+| `fin_s9_r2` | cdist | 3 laps | 47.3 / 21.7 / 24.0 | 0.12 | 3.05 / 1.12 / 0.055 | 0.44 | 0.24 / 0.24 | 0.16 | 62.4 | 0.56 |
+| `polar_s9` | polar | 3 laps | 49.2 / 22.5 / 24.1 | 0.16 | 2.99 / 1.09 / 0.058 | 0.50 | 0.48 / 0.23 | 0.24 | 15.3 | 0.68 |
+
+- **What the polar runs match.** Every polar run completed its 3 laps, with lap times, clearances, odometry and race-phase belief inside the spread of the reference runs.
+- **Compute.** In Gazebo, where it shares the CPU, the estimator dropped from ~62 ms to ~14 ms per scan. The whole simulation ran faster (RTF 0.69 against 0.56–0.62).
+- **Lap-1 belief: not the ICP; slam_toolbox's local scan matching.** Three of the 4 polar runs had a higher lap-1 map-frame belief error than the two references first compared (0.48–0.94 m against 0.24–0.41 m). Measured against all 39 cdist runs of v5 (`test_unseen`, race driver), just before the loop closes:
+
+  | | SLAM belief median / p90 / max | Odometry alone median / p90 / max |
+  |---|---|---|
+  | cdist (39 runs) | 0.33 / 0.64 / 1.48 m | 0.27 / 0.68 / 1.01 m |
+  | polar (4 runs) | 0.49 / 0.79 / 0.89 m | 0.44 / 0.76 / 0.87 m |
+
+  - Polar and cdist do not differ (Mann-Whitney p = 0.12). Seed 7, where 3 of the 4 polar runs are, is a hard seed with cdist too (0.40 / 0.63 / 0.74 m).
+  - Before the loop closes, the SLAM does not improve the odometry: it is worse in 56 % of the runs (paired Wilcoxon p = 0.55).
+  - **Cause.** In lap 1 slam_toolbox scan-matches every processed scan (~175, every 0.2 s) against its own recent scans. In 65–80 % of them it moves the heading by one or more 0.2° steps (`fine_search_angle_offset`). Those steps add up to 30–50° over the lap for a net ±0–7°, a random walk much larger than the odometry heading error over the same interval (~0.1° per 0.5 s). The odometry prior hardly weighs in: Karto multiplies the match response by max(`minimum_angle_penalty`, 1 − 0.2 Δθ²/`angle_variance_penalty`), and with the defaults (1.0 rad², floor 0.9) a 1° departure costs 0.006 %.
+  - **Not the geometry.** Classified by the true lane edges beside the car, the noise is the same with a wall on both sides (641 corrections: yaw moved in 73 %, mean |Δθ| 0.23°) as with a wall and an invisible curb (7228: 70 %, 0.20°), and on straights as in turns (68 % vs 75 %). The signed mean is ~0: it is a zero-mean random walk of the matcher, not a bias from missing structure.
+  - The crossing error of lap 1 (`race.crossings[0]`) is bimodal because of this: near zero when the loop closes just before the car's lap counter fires, the open-loop SLAM drift when it closes after.
+  - **Fixed in §12**, in slam_toolbox's configuration. The odometry-prior penalties first suspected turned out not to be the lever; the smear of the correlation grid is.
+- **Race phase.** The map shape (after rigid ICP) is as good as with cdist, and the race-phase belief is unchanged.
+
+**Latency.** Both backends were measured in the same session on the PC (1 thread, pinned; `profile_pc.json`, `profile_pc_polar.json`, `live_pc_*_warm.json`):
+
+| | cdist | polar |
+| --- | --- | --- |
+| Replay per scan, p50 / p95 / p99 (ms) | 19.4 / 27.2 / 32.0 | **3.8 / 7.6 / 10.6** |
+| ICP per scan (ms) | 16.7 | **0.8** (0.69 compiled) |
+| Top-level torch calls per scan | 3453 | 794 |
+| Node service, `live --keep-warm` p50 (ms) | 25.1 (×1.29) | 5.6 (×1.47) |
+| Pi, node service, low / nominal / high (ms) | 170 / 237 / 353 | **39 / 50 / 68** |
+| Pi budget, low / nominal / high (ms) | 61 / 54 / 43 | 61 / 54 / 43 |
+| Verdict (`pi4_budget.py check`) | FAIL | **INDETERMINATE**: pass, pass, fail |
+
+- Where the polar pipeline spends its time on the Pi: the network 15–27 ms (replay), the compiled ICP 4–7 ms, and preprocessing and glue 7–11 ms.
+- **The network is now the dominant stage.**
+- The pessimistic band fails by 58 %. Two levers remain, and neither needs retraining:
+  - an incremental `predict()` raises the budget by 5–6 ms (nominal 59, high 49 ms) but is not enough;
+  - exporting the network (ONNX Runtime / TorchScript) is what cuts its 417-call floor.
+- The measurement on the Pi (`RUN_ON_PI.md`, now also with `--icp-backend polar`) decides the band.
+
+**Deployment requirements found on the way.**
+- **numba on the car.** `pip install numba` (aarch64 wheels). The first start compiles the kernel and caches it in `__pycache__`; the node's warm-up absorbs this.
+- **The `performance` CPU governor.** With the core idling between scans, the laptop's service doubled (11.2 against 5.6 ms): the clock drops between bursts. The Pi's default governor behaves the same way.
+- **Environment note.** In this venv, numba needs a newer `coverage` than the system package; `pip install "coverage>=7.6"` is already done.
+
+## 12. slam_toolbox scan-matcher tuning (2026-09-29)
+
+**Problem (§11).** Before lap 1 closes its loop, slam_toolbox was no better than the learned odometry it corrects. Its matcher moved the heading in random 0.2° steps at almost every scan. Consequences:
+- a lap-1 belief error up to 1.8 m;
+- after the closure, a map distorted enough that the race-phase error stayed at 0.6–0.8 m on seed 10 (§9).
+
+**Method: offline SLAM replay** (`tools/analysis/replay_slam.py`).
+- Every recorded v5 run on `test_unseen` (51 runs, seeds 6–15, 43 with a lap-1 crossing) is fed again to slam_toolbox.
+- Inputs:
+  - the odometry TF the node published in the run: the model's estimate from the recorded, noisy sensors;
+  - the de-skewed revolutions, rebuilt with the same checkpoint.
+- The truth is only used to score.
+- One configuration over all runs takes ~3 min.
+- The replay reproduces Gazebo: open-loop error median / p90 / max 0.38 / 0.70 / 1.43 m, against 0.34 / 0.68 / 1.48 m live; per-run correlation 0.78.
+- The SLAM is chaotic: a tiny change of its input changes the run. Every configuration was therefore judged on 3 realizations per run (129 samples). Each realization adds a heading noise of 0.02°/√m to the odometry, ~10× below its own error.
+
+**What was tried** (one parameter at a time, then combinations):
+
+| Change | Effect |
+| --- | --- |
+| Odometry-prior penalties (`angle_variance_penalty` 1e-3 to 1e-5, `distance_variance_penalty` 1e-3, lower floors) | Median better; tail and race phase worse. Karto centres the fine search on the coarse match, not on the odometry. |
+| `minimum_time_interval` 0.5 s | Race phase much worse (32 of 43 runs fail). |
+| **`correlation_search_space_smear_deviation`** 0.10 → 0.07 / 0.05 / 0.04 / **0.03** / 0.02 | **The lever.** The 10 cm smear made the response surface nearly flat, so its maximum jumped between 0.2° steps. 0.03–0.04 is best; 0.02 is worse again. |
+| + `minimum_travel_distance` / `_heading` 0.05 → **0.2 m / 0.15 rad** | Fewer matches when slow or stopped, where the matcher only adds noise. It binds below ~1 m/s, since the car moves 0.26 m in the 0.2 s between processed scans at 1.3 m/s. Best tail, and the most stable with a worse odometry. |
+
+**Applied** (`ros2_ws/src/apex_fusion_research/config/slam/slam_toolbox_learned.yaml`): smear 0.03, `minimum_travel_distance` 0.2, `minimum_travel_heading` 0.15. Every other parameter is unchanged.
+
+**Result** (replay, 43 runs × 3 realizations, deterministic replay):
+
+| | Before | Tuned |
+| --- | --- | --- |
+| Lap-1 open-loop error, median / p99 / max | 0.38 / 1.65 / 1.79 m | **0.19 / 0.53 / 0.60 m** |
+| Lap-1 open-loop error > 0.5 m | 29 % | **2 %** |
+| SLAM > 10 cm worse than the odometry alone | 48 % | 18 % |
+| Race-phase error p95 > 0.35 m | 18 % | **5 %** |
+| Race-phase lateral error p95 > 0.20 m (the blind margin) | 45 % | 16 % |
+| ATE, median / max | 0.22 / 0.58 m | 0.13 / 0.41 m |
+
+**Robustness to a worse odometry.** The simulated odometry is not validated on the car. The sensors are modelled from datasheets, the network is trained on simulation only, and nothing has been measured on the hardware yet, so the real one is probably worse. The replay added errors to the model's odometry: a heading random walk plus a length scale error, 2 realizations × 43 runs.
+
+| Race p95 > 0.35 m / open-loop > 0.5 m | Nominal | ×2 (+0.4°/√m, 2 %; odometry alone 0.50 m median) | ×3 (+0.8°/√m, 3 %; 0.94 m) |
+| --- | --- | --- | --- |
+| Before | 18 % / 29 % | 17 % / 29 % | 13 % / 22 % |
+| Tuned | 5 % / 2 % | 2 % / 3 % | 5 % / 7 % |
+
+With the odometry ×3, the tuned SLAM keeps the lap-1 error at 0.20 m median, where the odometry alone is at 0.94 m.
+
+**Remaining.**
+- About 5 % of samples still have a race-phase p95 of 0.35–0.6 m, mostly seeds 15 and 10.
+- The real car's `real_vehicle/.../slam_toolbox_online_async.yaml` has the same matcher settings as the old configuration. It should get the same change once its odometry is measured, with the same replay on recorded car runs.
+
+**Gazebo confirmation.** Runs `slamfix_s6..s14`: cdist ICP, same estimates as polar. Seed 15 was aborted, because WSL lost its multicast network. One run per seed, against `fin_s*` (before):
+
+| Seed | Tuned: result / lap-1 crossing belief / closure step / min clearance / SLAM ATE / sound corridor | Before |
+| --- | --- | --- |
+| 6 | 3 laps / 0.41 m / 0.40 m / 14.1 cm / 0.21 m / 100 % | 3 laps / 0.03 / 0.06 / 15.5 / 0.15 / 100 % |
+| 7 | 3 laps / 0.24 / 0.23 / 13.3 / 0.16 / 100 % | 3 laps / 0.42 / 0.42 / 12.7 / 0.22 / 83 % |
+| 8 | 3 laps / 0.29 / 0.28 / 8.8 / 0.21 / 100 % | 3 laps / 0.31 / 0.33 / 8.5 / 0.22 / 100 % |
+| 9 | 3 laps / 0.36 / 0.37 / 14.0 / 0.20 / 100 % | 3 laps / 0.02 / 0.02 / 10.9 / 0.17 / 100 % |
+| 10 | **curb in race lap 2** / 0.16 / 0.15 / −0.9 / 0.30 / 89 % | 3 laps / 0.98 / 1.09 / 11.9 / 0.51 / 71 % |
+| 11 | 3 laps / 0.26 / 0.23 / 10.2 / 0.17 / 100 % | 3 laps / 0.13 / 0.12 / 11.2 / 0.20 / 100 % |
+| 12 | 3 laps / 0.18 / 0.13 / 14.0 / 0.06 / 100 % | 3 laps / 0.37 / 0.34 / 9.3 / 0.15 / 100 % |
+| 13 | 3 laps / 0.13 / 0.14 / 10.4 / 0.09 / 100 % | 3 laps / 0.45 / 0.43 / 7.9 / 0.21 / 100 % |
+| 14 | 3 laps / 0.27 / 0.19 / 13.2 / 0.09 / 100 % | 3 laps / 0.25 / 0.28 / 15.3 / 0.15 / 100 % |
+
+- **Results:** 8 of 9 completed, against 9 of 9 for `fin_s*`.
+- **SLAM ATE:** median 0.17 m against 0.20 m.
+- **Corridor:** sound on every completed seed.
+- **One run per seed** cannot confirm the replay's statistics. The SLAM is chaotic, and the lap-1 crossing belief is bimodal (§11), so the per-seed differences are mostly chance.
+- **Seed 10 (open).** On every seed-10 run, before and after the change, the lap-1 map is distorted around the hairpin (s ≈ 12–30 m).
+  - In the race phase there, the SLAM belief is 0.36–0.79 m from the truth while the odometry alone is at 0.14–0.30 m (`fin_s10` 0.79, `x10_v5_s10` 0.72, `rx_L1_s10` 0.53, `slamfix_s10` 0.36).
+  - The race line planned on that map loses its blind-side margin at the invisible curb. `fin_s10` still completed with a true line clearance of 0.7 cm; `slamfix_s10`'s line was 4.4 cm over the curb.
+  - In the replay, the tuned SLAM removes the distortion on 2 of the 3 seed-10 recordings.
+- **Next candidate, not tried:** a longer matcher buffer (`scan_buffer_size` 40–60, now 20 ≈ 5 m of track). It must be checked with the replay's CPU measurement (`cpu_s`), because it makes each match costlier. slam_toolbox also runs on the Pi, and its cost there is still an assumption in `pi4_budget.py`.
+- **Revert:** delete `correlation_search_space_smear_deviation` and set `minimum_travel_distance` / `minimum_travel_heading` back to 0.05.
+
+## 13. The network on ONNX Runtime (2026-09-29)
+
+**What.** `onnx_net.py` exports v5's `StreamingPoseNet` (one scan step, batch 1) to `<checkpoint>.onnx`. ONNX Runtime then runs it as one compiled call. The weights are the same, so there is no retraining and v5 stays the standard.
+- Three rewrites are needed for the export only; the checkpoint is untouched:
+  - `nn.GRUCell` written out (its export fails on `unsafe_chunk`);
+  - the IMU encoder's packed GRU as a masked loop over the 40 padded samples (the same final state);
+  - the boolean `Where` nodes of the scan rotation run as uint8 (no CPU kernel for booleans).
+- **Equivalence.** Over a whole replayed run, the pose differs from PyTorch by ≤ 0.001 mm and 0.000003°. `tests/test_onnx_net.py` checks the outputs and the state scan after scan.
+- **Where it is used.** Opt-in; the default stays PyTorch:
+  - `LiveOdometry(net_backend="onnx")`;
+  - the node parameter `net_backend`;
+  - the launch argument and `apex_real2sim_up.sh --net-backend onnx`;
+  - `latency_profile.py --net-backend onnx`.
+- **On the Pi.** Needs `pip install onnxruntime` (aarch64 wheels). The bundle carries the `.onnx` and the commands (`RUN_ON_PI.md`).
+
+**Latency** (PC, same session, 1 thread, polar ICP):
+
+| | Network on PyTorch | Network on ONNX Runtime |
+| --- | --- | --- |
+| Replay per scan, p50 / p99 | 4.9 / 14.1 ms | 4.0–4.2 / 10.1–10.5 ms |
+| Network | 3.1 ms | 2.1 ms (2.0 in ORT, the class `native`) |
+| Top-level torch calls per scan | 794 | 505 |
+| Pi, node service, low / nominal / high | 39.1 / 50.2 / 67.6 ms | 37.4 / 46.3 / 61.1 ms |
+| Pi budget, low / nominal / high | 61.1 / 53.7 / 42.8 ms | 59.4 / 52.8 / 42.8 ms |
+| Verdict | INDETERMINATE | INDETERMINATE: pass, pass, fail by 43 % |
+
+- **The gain is smaller than expected**: 4–6.5 ms on the Pi.
+  - The fixed ~36 ms per network in §10 was measured on the network alone with random weights, where dispatch is priced by the scalar factor.
+  - Once the dispatch is gone, the network's own compute remains: 2.0 ms on the PC, 15–20 ms projected on the Pi's A72.
+  - That compute is the scan-pair convolutions (87 % of the 9.4 M MACs) and three GRUs stepped at batch 1, i.e. latency-bound small GEMVs.
+  - The projection prices ORT's compiled code like numba's (clock × per-clock ratio). Only the Pi measurement settles that factor.
+- **What would close the pessimistic case.** It is now the network's compute, so either:
+  - a cheaper network: a new trained version, with the parameter / MAC bounds of §10;
+  - or confirmation on the Pi that the nominal band holds.
+  - Without dispatch, the network scales with its size: it would have to be ~3× cheaper for the pessimistic band.
+
+**Closed loop, the car's stack** (Gazebo, `test_unseen`, 3 laps, runs `pistack_s6..s9`). The stack is polar ICP + ONNX network + the tuned SLAM of §12. Every run completed:
+
+| Seed | Lap times (s) | Min clearance | Segment drift | Estimator compute in Gazebo, p50 | Belief p95 | SLAM ATE |
+| --- | --- | --- | --- | --- | --- | --- |
+| 6 | 47.2 / 22.5 / 23.9 | 14.9 cm | 0.57 % | 10.0 ms | 0.14 m | 0.07 m |
+| 7 | 48.1 / 21.5 / 23.9 | 11.1 cm | 0.86 % | 10.1 ms | 0.51 m | 0.24 m |
+| 8 | 48.6 / 24.1 / 23.1 | 13.9 cm | 1.30 % | 10.4 ms | 0.24 m | 0.14 m |
+| 9 | 46.1 / 23.2 / 23.8 | 14.9 cm | 0.98 % | 11.0 ms | 0.40 m | 0.20 m |
+
+- Lap times, clearances and odometry are those of the references (`fin_s*`, `slamfix_s*`).
+- The estimator uses ~10 ms per scan in Gazebo, against 55–62 ms with cdist and PyTorch.
+- Seed 10 (§12) was not rerun: its lap-1 map distortion is the SLAM's, not the estimator's.
+
+## 14. v6: v5's IMU encoder distilled into a perceptron (2026-09-29)
+
+**Why.** After §13 the pessimistic band still failed: 61.1 ms against 42.8. The network's ONNX time per block (PC, 1 thread, batch 1, 2.76 ms in total):
+
+| Block | Time | ONNX nodes | Parameters | MACs |
+| --- | --- | --- | --- | --- |
+| IMU encoder: a GRU over the 40 padded samples | ~2.24 ms (81 %) | 2217 | 73.6 k (15 %) | 2.9 M |
+| Scan-pair convolutions | 0.27 ms (10 %) | 96 | 128 k | 8.2 M |
+| `pair_channels` | 0.08 ms | 326 | 0 | – |
+| Recurrent core and heads | ~0.17 ms (6 %) | ~336 | 287 k (59 %) | 0.3 M |
+
+- The limit was the number of sequential steps, not the parameter count.
+- The IMU windows (8538 validation intervals) hold 10 samples at the median, 20 at p99 and 31 at most. Training (`sqlite_windows.build_split`) and the live node (`MAX_IMU`) both zero-pad them to 40.
+
+**The idea** (`streaming_model.WindowImuEncoder`, `distill.py`).
+- **Over a finite window the recurrence adds no expressivity.**
+  - The IMU encoder keeps no state between intervals: e = G(w, n), with w the padded 40 × 6 window and n its length.
+  - A GRU over at most 40 samples is one such continuous function. A perceptron with one hidden layer over the whole window approximates any of them [24].
+  - The replacement takes the flattened window and the one-hot length: 281 → 128 → 128, SiLU, 52.6 k parameters. It turns 40 sequential steps into two matrix products.
+- **What the rest of the network uses.** The fusion layer reads e only as u = W_imu e (the IMU columns of `inp[0]`). On the validation intervals, 99 % of the variance of u lies in 5 directions and 99.9 % in 7. The fit is measured in that metric.
+- **Measured before any training.** Closed-loop replay of 8 validation runs, with the replacement fitted on 8 other runs:
+
+  | IMU encoder | Error per interval | 10 s segment drift, mean / p90 | Distance to v5, mean / p99 |
+  | --- | --- | --- | --- |
+  | v5 (GRU) | 1.866 mm | 0.521 / 0.915 % | – |
+  | None (the mean feature) | 4.871 mm | 2.133 / 3.757 % | 4.15 / 16.6 mm |
+  | Linear least squares | 2.210 mm | 0.585 / 0.984 % | 1.03 / 6.7 mm |
+  | Perceptron 281-128-128 | 1.875 mm | 0.520 / 0.907 % | 0.18 / 1.1 mm |
+
+  - The IMU feature matters: without it the drift quadruples.
+  - It is nonlinear: the best linear map explains 30 % of u.
+  - A small perceptron reproduces it.
+- **Distillation, not the ground truth.**
+  - Only the new encoder trains; every other weight is v5's, frozen.
+  - The targets are v5's: its IMU feature (prefit), then its outputs and its recurrent state along the training lanes (distill).
+  - The student's error is bounded by its distance to the teacher: |S − y| ≤ |S − T| + |T − y|.
+  - With a squared loss, E[(S − y)²] = E[(S − E[y|x])²] + E[Var(y|x)]. The teacher approximates E[y|x], so imitating it removes the noise term from the gradient [22, 23].
+  - The kept epoch is the one closest to the teacher on validation; the ground truth is used only to report.
+- **Why the difference does not grow over the laps.** The frozen core is contracting: the largest Lyapunov exponent of v5 is −0.02 to −0.05 1/s. A bounded difference at its input therefore gives a bounded difference in its state (incremental input-to-state stability) [25].
+
+**Training** (`distill.py`, GPU).
+- **`prefit`:**
+  - data: every training window and its mirrored copy (631 696);
+  - loss: 1 − R² of u;
+  - 40 epochs in 21 s;
+  - R² of u: 0.9973 on train, 0.9968 on validation.
+- **`distill`:**
+  - student and teacher run side by side on the training lanes (64 × 32 intervals, the same augmentation), each with its own state;
+  - loss: the closed-form Gaussian KL of the (delta, logvar) predictions, plus the mismatch of the GRU states, body velocity and biases;
+  - 10 epochs in 712 s.
+  - The run is deterministic: two runs gave identical epochs. The first, selected by validation drift, is kept in `run1_select_trel/`.
+
+| | Validation segment drift | Distance to v5 per interval, mean / p99 / max |
+| --- | --- | --- |
+| v5 | 0.729 % | – |
+| Prefit only (epoch 0) | 0.733 % | 0.144 / 0.806 / 6.25 mm |
+| Distilled, epoch 10 (kept) | 0.731 % | 0.115 / 0.705 / 5.36 mm |
+
+**Results** (`outputs/real2sim_v6_imu_window/`).
+
+Offline, with the polar ICP (`evaluate_robust.py --icp-association polar`, output in `evaluation_polar/`). Each cell is speed error / rpe 1 s / segment drift:
+
+| Split | v5 | v6 |
+| --- | --- | --- |
+| Validation, plain | 3.031 cm/s / 1.670 cm / 0.707 % | 3.035 cm/s / 1.678 cm / 0.709 % |
+| Validation, perturbed | 3.147 / 1.761 / 0.756 % | 3.146 / 1.764 / 0.758 % |
+| Test, plain | 3.228 / 1.944 / 0.929 % | 3.232 / 1.948 / 0.932 % |
+| Test, perturbed | 3.314 / 2.020 / 0.954 % | 3.320 / 2.025 / 0.955 % |
+
+- Every ratio is ≤ 1.005.
+- The subgroups of the perturbed splits (IMU at 52 Hz, gyro bias above 0.1 rad/s) and the gyro-bias error are unchanged too.
+
+**Long race.** Offline replay of the 10-lap run `data/real2sim/long10_s6_r2`, per lap:
+- The per-interval distance between v6 and v5 stays at 0.09–0.13 mm (mean) in every lap, from lap 1 to lap 10.
+- The RMS difference of GRU cell 1 stays at 0.009–0.012.
+- Both have the same 20 slow units, and their |h| levels off by lap 5 at the same 0.66.
+- Error per interval and 10 s drift per lap equal v5's (within ±0.02 mm and ±0.02 %).
+
+**ONNX.** `onnx_net.py export` writes the window encoder as it is: 772 nodes against 2968. Over a replayed run, the pose differs between torch and ORT by ≤ 0.0013 mm.
+
+**Latency.** PC, 1 thread, CPU 3, polar + ONNX.
+- The laptop's speed varies between states: in one state the same v5 replay took 7.9 ms per scan instead of 4.6. v5 and v6 were therefore run alternately, three rounds.
+- The table shows round 3, with both models in the state of the §13 reference.
+- `pi4_budget.py check --live` takes the periodic factor from each model's own live run.
+
+| | v5 | v6 |
+| --- | --- | --- |
+| Network alone (`session.run`, same state, interleaved) | 2.4–2.9 ms | 0.57–0.63 ms |
+| Network in the replay (`net_native`) | 2.08 ms | 0.75 ms |
+| Replay per scan, mean / p50 | 4.84 / 4.5 ms | 3.02 / 2.7 ms |
+| Live, service p50 | 5.6 ms | 3.9 ms |
+| Periodic factor | 1.23 | 1.44 |
+| Pi, node, low / nominal / high | 36.2 / 44.8 / 59.1 ms | 26.4 / 32.6 / 43.0 ms |
+| Pi budget, high | 43.0 ms | 42.8 ms |
+| Verdict | INDETERMINATE (−27 %) | INDETERMINATE (0 %: at the limit) |
+
+- **The projection from the network alone was optimistic.** It predicted 39.4 ms: that assumed the network shrinks by its isolated ratio (×0.18) and the periodic factor stays 1.34. In the pipeline, the network costs more than alone (cold caches, the fixed cost of the call), and the periodic factor grows.
+- **The rounds spread widely:** v6's high band is 41.7–60.6 ms, because the laptop's state changes the replay and the live run differently.
+- **The network is no longer the bottleneck.** In the Pi's pessimistic band it is 10.7 of 43.0 ms, against 26.3 ms for v5. The rest is:
+  - the Python stages: glue 9.8, prep 6.1 and post 3.9 ms;
+  - the ICP: 11.5 ms.
+
+**Closed loop, the car's stack with v6** (Gazebo, `test_unseen`, 3 laps, polar ICP + ONNX + the tuned SLAM of §12, runs `v6stack_s6..s9`). Every run completed:
+
+| Seed | Lap times (s) | Min clearance | Segment drift | rpe 1 s | Estimator compute in Gazebo, p50 | Belief p95 | SLAM ATE |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 6 | 50.9 / 22.2 / 23.9 | 12.1 cm | 0.76 % | 1.71 cm | 8.4 ms | 0.22 m | 0.12 m |
+| 7 | 47.8 / 22.1 / 24.1 | 13.7 cm | 0.88 % | 1.93 cm | 8.7 ms | 0.32 m | 0.17 m |
+| 8 | 50.0 / 23.0 / 23.2 | 14.5 cm | 1.25 % | 2.03 cm | 8.1 ms | 0.39 m | 0.21 m |
+| 9 | 48.6 / 23.7 / 23.9 | 11.0 cm | 1.07 % | 2.09 cm | 8.1 ms | 0.16 m | 0.09 m |
+
+- The same seeds with v5 (`pistack_s6..s9`, §13) give:
+  - lap-1 times of 46.1–48.6 s;
+  - clearances of 11.1–14.9 cm;
+  - drift of 0.57–1.30 % (mean 0.93 %; v6: 0.99 %);
+  - belief p95 of 0.14–0.51 m (mean 0.32 m; v6: 0.27 m).
+- Closed-loop runs are not paired: the trajectories, the SLAM corrections and the timing differ. Each metric of v6 lies inside v5's spread.
+- The estimator's compute in Gazebo drops from 10.0–11.0 to 8.1–8.7 ms.
+
+**Next.** More margin in the pessimistic band comes first from the Python stages (~20 ms). A second source is narrowing the scan-pair convolutions to (40, 40, 48, 56), which keeps 99 % of each layer's activation variance and saves ~2–3 ms on the Pi. The Pi measurement settles the band.
+
+```
+python distill.py prefit  --out ../outputs/real2sim_v6_imu_window/hybrid_submap_v4
+python distill.py distill --out ../outputs/real2sim_v6_imu_window/hybrid_submap_v4 --epochs 10
+python onnx_net.py export --checkpoint ../outputs/real2sim_v6_imu_window/hybrid_submap_v4/best_model.pt
+python evaluate_robust.py --db ../../data/multiscenario_pose/pose_dataset_v4.sqlite3 --robust config/robust_v3.yaml \
+    --out ../outputs/real2sim_v6_imu_window/evaluation_polar --icp-association polar \
+    --checkpoints v5_10hz=../outputs/real2sim_v5_10hz/hybrid_submap_v4/best_model.pt v6_imu_window=../outputs/real2sim_v6_imu_window/hybrid_submap_v4/best_model.pt
+python latency_profile.py profile --ckpt <v6> --icp-backend polar --net-backend onnx --cpu 3 --out <profile.json>
+python latency_profile.py live    --ckpt <v6> --icp-backend polar --net-backend onnx --cpu 3 --keep-warm --out <live.json>
+python pi4_budget.py check --profile <profile.json> --live <live.json>
+```
+
+The tests are in `tests/test_distill.py`:
+- the window encoder gives the same output cut or padded, and sees the length;
+- the KL against `torch.distributions`;
+- the student equals the teacher outside the encoder.
+
+`tests/test_onnx_net.py` exports the window layout, and `tests/test_pi4_budget.py` covers `--live`.
+
+## 15. Standing still: the one regime the training set does not contain (2026-10-11)
+
+The real car, parked, walked away from itself: 0.42 m/min with the estimator
+freshly started, 0.97 m/min after a single 7 cm pulse and 4.78 m/min after a
+series of them. The sensors were clean (2.2 deg of tilt, `|a|` 9.859, the gyro
+reporting exactly zero), and the classical ICP inside the fusion called the
+standstill correctly on 1125 of 1142 revolutions. The drift was coming from the
+learned part, and `bias_ay` was sitting on its clamp at -1.00000.
+
+**Reproduced offline, in simulation, with no car.** `tools/analysis/standstill_drift.py`
+tiles the stationary prefix of a recorded run -- the seconds before the race
+driver leaves `WAIT` -- for as long as asked, with fresh LiDAR noise on every
+revolution, and replays it through `LiveOdometry` exactly as the node does.
+Three parked minutes on the v5 checkpoint:
+
+| | parked drift | per revolution | `bias_ay` at the end |
+|---|---|---|---|
+| simulated IMU (large turn-on biases) | **21.3 m** / 180 s | 11.9 mm | **-1.0000**, on the clamp |
+| the real car's signature (gyro exactly 0, 2.2 deg tilt) | **23.8 m** / 180 s | 13.3 mm | -0.79 |
+| ICP alone, same stream | 1.2 mm / 180 s | 0.94 mm (unsigned, mean 0.004 mm) | -- |
+
+`--attribute` breaks the increment `dp = dp_pred + k_p * nu + res`
+(`streaming_model.forward`) into its terms. Over the second half of a parked
+run, per revolution in x: the ICP contributes **-0.004 mm**, dead reckoning from
+the velocity state **+0.44 mm**, the measurement head **+2.28 mm** on top of the
+ICP's zero, and the residual head **+9.6 mm** -- nearly its entire +-0.01 m
+authority (`StreamScales.residual_xy_m`), latched. The velocity state and the
+bias clamp are consequences, not the cause: two learned heads extrapolate a
+constant forward motion in a regime they never saw. The dataset's stationary
+prefix is 1.5 s, the training chunks are 3.2 s, and `age` saturates at 5 s, so
+the network cannot even represent "parked for two minutes".
+
+**The fix is to stop overriding the part of the fusion that is right**
+(`standstill.py`). While a standstill is confirmed, the increment is the ICP's
+own zero-velocity solution, the network is not stepped at all -- so its memory
+stays as it was when the car stopped, a state the training distribution
+contains -- and the velocity state is set to zero.
+
+Entering and staying are deliberately different tests. Entering needs the ICP's
+standstill flag, confirmed over three revolutions. Staying must not: that flag
+carries a vibration term (`accel_std < 0.15`) which cannot separate parked from
+driving -- a parked revolution averages 0.087 and reaches 0.17, while 1.7 % of
+driving revolutions sit below 0.15 -- so it drops for about one parked
+revolution in a hundred, and handing those single revolutions back to the
+network cost more than everything else put together (0.52 m/min with a
+flag-based stay condition, against 0.003 m/min without). The hold therefore
+stays on geometry alone: the LiDAR increment (<= 6 mm, twice the worst parked
+value), the heading increment (<= 0.001 rad) and the conditioning of the solve
+(`eig_ratio >= 0.08`, against 0.25 median parked and 0.07 median driving), which
+is the backstop for a scene that cannot observe the direction of travel.
+Release is immediate: at the driver's speed floor of 0.35 m/s one revolution is
+35 mm of travel against a 6 mm gate.
+
+| 180 s parked, v5 | drift | hold active |
+|---|---|---|
+| before | 23.828 m (6.9 m/min steady) | -- |
+| after | **0.003 m** (0.002 m/min) | 99.9 % of revolutions |
+
+Driving is untouched. On the validated `final_s13` run (3 laps, 102 s, 173.8 m
+of path) replayed through both estimators against the simulator's own pose:
+
+| | RPE 1 s | RPE 10 s | end-to-end |
+|---|---|---|---|
+| without the hold | 19.7 mm | 104.5 mm | 0.327 m (0.19 %) |
+| with the hold | 19.5 mm | 105.7 mm | **0.234 m (0.13 %)** |
+
+69 of 1012 revolutions were held -- the 44 of the stationary prefix and the
+stops -- and the largest ICP increment among them was 6 mm, against 171 mm per
+driving revolution. The two trajectories separate by 9.9 cm by the end, because
+once a hold happens the network's memory differs from then on; that is the
+intended change, and it is why the closed loop is re-run in Gazebo rather than
+argued about.
+
+`tests/test_standstill.py` covers the state machine and both ends of the
+measurement (three parked minutes cost millimetres; no driving revolution is
+held). `tests/test_live_odometry.py` runs with the hold off, because it measures
+the network path against the batch evaluation and the hold bypasses the network.
+The hold is a ROS parameter of the node (`standstill_hold`, default true) and a
+launch argument of the real2sim stack (`--standstill-hold false` reproduces the
+drift). It is a property of the *deployed* estimator: `stream_predict`, the
+training and evaluation path, is unchanged.
+
+Open: this treats the symptom of an extrapolation, not its cause. The cure at
+the weights would be stationary segments of tens of seconds in the training
+stream, with `age` scaled to match -- a fine-tune of the two offending heads
+plus the whole Gazebo revalidation. The hold is deterministic, measurable and
+needs neither.
+
+## 16. v7: the standstill cured in the weights (2026-10-11)
+
+Section 15 stops the drift at inference time by refusing to let the network
+speak while the classical ICP confirms a standstill. That is deterministic and
+it works, but it treats the symptom: the network still believes the car is
+moving. This section fixes the belief. **The two are independent and both
+ship**: the model no longer invents the motion, and the hold is still there if
+it ever does.
+
+Three levers, in the order they were found, each one measured on a parked
+stream with the inference hold **off**, so what is measured is the model:
+
+| 180 s parked, the model alone | simulated IMU | the car's static signature |
+|---|---|---|
+| v5 | 21.285 m (7.0 m/min) | 23.828 m (6.9 m/min) |
+| + long standstills in the training set | 0.410 m | 1.294 m |
+| + the standstill term in the loss | 0.173 m | 0.845 m |
+| + the gyro auto-zero in the sensor model | 0.174 m | 0.327 m |
+| + the recurrent core unfrozen (**v7**) | **0.141 m** | **0.132 m (0.044 m/min)** |
+
+### The data: standing still had to be in the training set
+
+`parked_long` (`tools/pose_dataset/config/motion.yaml`) cruises at 12-25 % of
+`v_ref` -- the real car's speeds -- with **two or three stops per lap of 20 to
+60 s**. The runs still drive a full lap, so every relative metric stays
+defined; they simply hold tens of seconds of genuine standstill, entered and
+left under the car's own braking. Preset `park_v5` generates them on the five
+training tracks, three seeds each, into `pose_dataset_v5.sqlite3` (dataset v4
+plus 30 runs, 293 in all, no QA failure). Measured on the result: stops of 23
+and 44 s, 62 % of the run parked, true speed 0.001 m/s.
+
+Nothing else was needed to make it teach the right thing. The loss already
+supervises the velocity and the IMU biases against the truth, so a parked
+interval already asks for a zero increment, zero velocity **and the
+accelerometer bias that is really there** instead of a ramp into the clamp. And
+`Lanes` walks each run in order with the state carried, so a lane that lands on
+a parked run sees the whole minute of standing the way the car lives it.
+
+That alone is an 18-fold improvement, and it is where the diagnosis sharpened:
+
+| per revolution in x, second half of a parked run | v5 | heads fine-tuned |
+|---|---|---|
+| the ICP | -0.000 mm | -0.000 mm |
+| `measure` head, on top of the ICP's zero | +2.29 | +0.69 |
+| dead reckoning `v dt + f dt^2/2` | +1.68 | +1.60 |
+| `k_p * nu` | +0.25 | -0.52 |
+| **residual head** | **+9.66** | **-1.75** |
+| `k_p` / `k_v` | 0.31 / 0.20 | 0.63 / 0.94 |
+
+The residual head changed sign and overshot. The net was -0.67 mm per
+revolution -- still 0.4 m/min.
+
+### The loss: a millimetre is invisible in centimetres
+
+`streaming_loss` scores everything in the units of a moving car (`UNITS`, 1 cm
+and 1 mrad). A systematic 0.67 mm per revolution is 0.067 of a unit, which is
+nothing, and it is 0.4 m/min of drift. Standing still is the one regime where
+that does not wash out: there is no next correction with real motion in it, so
+the error integrates for as long as the car is parked.
+
+So where the interval's **true** translation is under 2 mm, the error is scored
+in millimetres instead (`STILL_TRANSLATION_M`, `STILL_UNIT_M`, weight 0.2).
+Only there, so it cannot trade against the accuracy of a driving interval. In
+training the term fell from 5.6 to 0.19, and the parked drift with it.
+
+### The sensor model: the car's gyro is not in the dataset
+
+What was left was specific to the real car, and separating the two halves of its
+static signature said which half (`standstill_drift.py --imu real_accel` /
+`--imu real_gyro`): the chassis's measured 2.2 deg of tilt is harmless
+(0.08 m/min), and the **gyro auto-zero** is not (0.21 m/min). The WT61PC
+recalibrates its zero-rate level at rest and then reports exactly 0.000 rad/s on
+every sample, with no noise at all. No simulated gyro does that -- its turn-on
+bias and its noise are always there -- so a perfectly constant gyro was a regime
+the network had never seen. **A gap in the sensor model, not a defect of the
+network.**
+
+It is now `imu.gyro_autozero` in `tools/pose_dataset/sensors.py`, declared on
+`APEX_real_wt61` (the profile that describes the hardware the car carries) and
+on `APEX_real_az`, which is `APEX_real` plus that and nothing else. The same 15
+trajectories are generated under both profiles, so the training stream holds
+both static signatures, and training takes `--sensors APEX_real APEX_real_az`.
+
+The gate is the **truth** -- the true speed and the true rate -- not the
+firmware's own test, and the comment in the code says so. A real module decides
+from vibration, which works because a driving car always has some; in here the
+condition would have to separate rest from a straight line at constant speed,
+and an inertial sensor cannot. Gating on the truth reproduces what the device
+does without claiming to reproduce how it decides, and it cannot zero a genuine
+rotation.
+
+**The attempt that failed, because it is worth not repeating.** The first
+implementation put the auto-zero in `robustness.py`, which applies at load time
+and would have needed no regeneration. But that layer has no ground truth, so
+the trigger had to guess "at rest" from the measurements, and with little
+vibration at low speed in the analytic generator it fired on straights too.
+Zeroing the gyro removes its bias, so the bias label has to be zeroed with it,
+and the label then jumped between its real value and zero at every corner --
+against a loss scaled at 1e-3 rad/s. The epoch-0 evaluation of the *unchanged*
+v5 weights caught it immediately: 0.729 % became 3.702 %. Reverted.
+
+### Fine-tuning: what was trained, and how the epoch was chosen
+
+`train_streaming.py train` gained `--init` (start from trained weights),
+`--freeze` (parameter prefixes to hold fixed) and `--lr`. Two stages:
+
+1. **The heads only** (`--freeze pair_encoder imu_encoder inp cells`, 10 epochs,
+   lr 1e-4): 52369 of 488753 parameters. The recurrent core that Gazebo
+   validated is untouched and only the heads re-learn, which is what a missing
+   regime actually needs.
+2. **Everything, at a fifth of the rate** (8 epochs, lr 3e-5), from the result
+   of the first. This is what takes the car's signature from 0.327 to 0.132 m:
+   the slow walk lives in the recurrent state, and the heads can only flatten so
+   much of it.
+
+Selection cannot be the usual rule here, because the drift this is about is not
+in the validation metric. With `--init`, the trainer scores the **initial
+weights as epoch 0** and then keeps the epoch with the least invented motion
+(`still_mm`: the mean translation reported over validation intervals whose true
+speed is under 1 cm/s) **among those whose segment drift stays within 1.05x of
+where it started**. The fine-tune cannot win by breaking the driving.
+
+### Driving is unchanged, measured on 108 held-out runs
+
+`evaluate_robust.py` (which now reports `still_mm` as well), dataset v5,
+plain and perturbed:
+
+| | v5 | v7d (heads) | v7 (unfrozen) |
+|---|---|---|---|
+| validation plain: segment drift / RPE 1 s | 0.710 % / 1.690 cm | 0.700 / 1.679 | 0.712 / 1.688 |
+| validation perturbed | 0.756 % / 1.761 cm | 0.741 / 1.745 | 0.730 / 1.720 |
+| test plain | 0.925 % / 1.938 cm | 0.933 / 1.950 | 0.942 / 1.939 |
+| test perturbed | 0.957 % / 2.014 cm | 0.959 / 2.018 | 0.959 / 2.005 |
+| parked intervals (short stops) | 0.888-1.138 mm | 0.854-0.917 | **0.829-0.859** |
+
+Every driving number is within 1.8 % of v5's across the four splits: the
+fine-tune costs nothing. The short-standstill metric improves only slightly
+because v5 was already near the ICP's noise floor over one or two seconds --
+the failure needs tens of seconds to appear, which is why
+`standstill_drift.py` exists and why the table at the top of this section is
+the one that matters.
+
+A single replay of `final_s13` had suggested the unfrozen stage cost accuracy
+(relative pose error over 10 s of 104.8 against 89.5 mm). The 108-run
+evaluation says the three models are equal there, so that was one run's
+fluctuation, not a regression.
+
+### The closed loop
+
+Gazebo, `test_unseen`, seed 13, 3 laps, lap 1 reactive -- the same run as
+`final_s13`, which is the validated reference:
+
+| run | model | 3 laps | lap-1 clearance | race clearance | guards | handover | segment drift |
+|---|---|---|---|---|---|---|---|
+| `final_s13` | v5, before this work | completed | 0.137 m | 0.206 m | 0 | 0.117 m | 0.762 % |
+| `nohold_s13` | v5, hold off | completed | 0.105 m | 0.223 m | 0 | 0.044 m | 0.819 % |
+| `hold_s13` | v5, hold on | completed | 0.106 m | 0.238 m | 1 | 0.030 m | 0.900 % |
+| `v7d_s13` | heads only | completed | 0.097 m | 0.191 m | 2 | 0.097 m | 0.657 % |
+| **`v7e_s13`** | **v7** | **completed** | **0.124 m** | **0.169 m** | **0** | **0.060 m** | 0.808 % |
+
+Every configuration finishes its three laps. Nothing here separates the models:
+across five runs of the same track and seed the lap-1 clearance spans 0.097 to
+0.137 m, the race clearance 0.169 to 0.238 m, the guard events 0 to 2 and the
+drift 0.657 to 0.900 %, and v5 itself occupies most of those ranges. What the
+closed loop establishes is that the fine-tune breaks nothing; the accuracy
+claim rests on the 108-run evaluation and the standstill claim on the parked
+streams.
+
+### What ships, and what it costs
+
+**v7** is `real2sim_v7e_standstill/hybrid_submap_v4/best_model.pt`, the default
+checkpoint of the live simulation. The architecture is v5's, unchanged -- same
+width, same convolutions, same IMU encoder, same hybrid input -- so **the Pi
+compute budget of sections 10 and 11 carries over as it is**: 488 753
+parameters, 18 ms per scan on the Pi 5 with the polar ICP and ONNX Runtime.
+The ONNX export agrees with PyTorch to 0.0014 mm of pose over 294 scans.
+
+The inference-time hold of section 15 stays on by default. The two mechanisms
+are independent and the hold still costs nothing: it fires only where the ICP's
+own increment is under 6 mm, against 171 mm on a driving revolution. v7 is what
+the car should believe; the hold is what catches a regime neither the dataset
+nor this section anticipated.
+
+**Not done:** v6 (the distilled IMU encoder, section 14) is still distilled from
+v5 and therefore still drifts when parked. Re-distilling it from v7 is the same
+`distill.py` recipe with a new teacher, and nothing depends on it today.
+
 ## Model catalogue
 
 All models are implemented in PyTorch [21]. Checkpoints and cached estimates
@@ -508,9 +1517,16 @@ were trained on a different, single-track recording and are not comparable.
 | Hybrid on scan-to-scan ICP | `streaming_model.py` (`hybrid=True`) | `streaming_v2/hybrid/best_model.pt` | 488 753 | 40 epochs, best 40 | 4.41 cm/s / 1.24 % | classical + network |
 | **Hybrid on scan-to-submap ICP (best)** | `streaming_model.py` (`hybrid=True`) | `streaming_v2/hybrid_submap/best_model.pt` | 488 753 | 40 epochs, best 34 | **4.26 cm/s / 0.95 %** | classical + network |
 | Classical odometry, scan-to-submap, v2 data (§5) | `icp_odometry.py` (`submap_keyframes=5`) | `real2sim_v2/icp_submap_{train,validation,test}.pt` | 0 | as above | 11.75 cm/s / 3.90 % (v2 test) | [2]–[10] |
-| **Hybrid on scan-to-submap ICP, real2sim v2 (live default)** | `streaming_model.py` (`hybrid=True`) | `real2sim_v2/hybrid_submap/best_model.pt` | 488 753 | 40 epochs on v2 `APEX_real`, best 38 | **3.51 cm/s / 1.36 %** (v2 test) | classical + network |
+| **Hybrid on scan-to-submap ICP, real2sim v2** | `streaming_model.py` (`hybrid=True`) | `real2sim_v2/hybrid_submap/best_model.pt` | 488 753 | 40 epochs on v2 `APEX_real`, best 38 | **3.51 cm/s / 1.36 %** (v2 test) | classical + network |
 | Classical odometry, scan-to-submap v3, v2 data (§6) | `icp_odometry.py` (`ICP_VARIANTS["submap_v3"]`), IMU delay compensated | `real2sim_v2_fast/icp_submap_v3_{train,validation,test}_imudelay.pt` | 0 | agreement fraction tuned on validation | 11.59 cm/s / 3.83 % (v2 test) | [2]–[10] |
 | **Hybrid on scan-to-submap v3, fast-motion options (§6)** | `streaming_model.py` (`hybrid=True`, `sweep_profile=True`), IMU delay compensated | `real2sim_v2_fast/hybrid_submap_v3/best_model.pt` | 488 753 | 40 epochs on v2 `APEX_real`, best 38 | **3.46 cm/s / 1.21 %** (v2 test) | classical + network |
+| **Hybrid on scan-to-submap v3 real, robust to the real sensors (§7)** | `streaming_model.py` (`hybrid=True`, `sweep_profile=True`, `bias_max` 0.30 / 1.0 / 1.0), ICP `submap_v3_real`, IMU delay compensated | `real2sim_v3_robust/hybrid_submap_v3_real/best_model.pt` | 488 753 | 40 epochs on v2 `APEX_real` + 2 perturbed copies (`robustness.py`), best 38 | **2.30 cm/s / 0.68 %** (v2 test); 2.41 cm/s / 0.72 % perturbed | classical + network |
+| **Hybrid on scan-to-submap v4, A2M8 at 4 kHz (§8)** | `streaming_model.py` (`hybrid=True`, `sweep_profile=True`, `bias_max` 0.30 / 1.0 / 1.0), ICP `submap_v4`, IMU delay compensated | `real2sim_v4_express/hybrid_submap_v4/best_model.pt` | 488 753 | 40 epochs on dataset v3 `APEX_real` (4 kHz) + 2 perturbed copies (`robust_v3`), best 36 | **3.88 cm/s / 1.19 %** (v3 test); 3.93 cm/s / 1.20 % perturbed | classical + network |
+| **Hybrid on scan-to-submap v4, A2M8 at 4 kHz / 10 Hz (§9, live default)** | as §8 | `real2sim_v5_10hz/hybrid_submap_v4/best_model.pt` | 488 753 | 40 epochs on dataset v4 `APEX_real` (4 kHz, 10 Hz) + 2 perturbed copies (`robust_v3`), best 38 | **3.22 cm/s / 0.93 %** (v4 test); 3.31 cm/s / 0.96 % perturbed | classical + network |
+| Classical odometry, scan-to-submap v4, polar search (§11) | `polar_icp.py` (`ICP_VARIANTS["submap_v4_polar"]`), IMU delay compensated | `real2sim_v6_polar/evaluation_polar/icp_submap_v4_polar_*.pt` | 0 | the `submap_v4` parameters (the same algorithm, compiled) | 9.11 cm/s / 2.75 % (v4 test) | [2]–[10] |
+| Hybrid v5 on the polar ICP (§11) | the v5 checkpoint with `icp_backend=polar` | `real2sim_v5_10hz/hybrid_submap_v4/best_model.pt` (unchanged) | 488 753 | not retrained | 3.23 cm/s / 0.93 % (v4 test); 3.31 cm/s / 0.95 % perturbed | classical + network |
+| **Hybrid v7: v5 fine-tuned to stand still (§16, live default)** | `streaming_model.py` (`hybrid=True`, `sweep_profile=True`, `bias_max` 0.30 / 1.0 / 1.0), ICP `submap_v4`, IMU delay compensated | `real2sim_v7e_standstill/hybrid_submap_v4/best_model.pt` | 488 753 | from v5 on dataset v5 (v4 + 30 parked runs, `APEX_real` and `APEX_real_az`): 10 epochs with the core frozen at lr 1e-4, then 8 epochs of everything at lr 3e-5; the epoch with the least invented motion among those holding the segment drift | **3.24 cm/s / 0.94 %** (v5 test); 3.31 cm/s / 0.96 % perturbed; **0.13 m of drift in 180 s parked against v5's 23.8 m** | v5 + standstill data, the millimetre loss term and the gyro auto-zero |
+| Hybrid v6: v5 with its IMU encoder distilled into a perceptron (§14) | `streaming_model.py` (`imu_encoder="window"`), `distill.py` | `real2sim_v6_imu_window/hybrid_submap_v4/best_model.pt` | 467 745 | v5 frozen; only the IMU encoder trained, to imitate v5 (prefit + 10 epochs, no ground truth); the epoch closest to v5 on validation | 3.23 cm/s / 0.93 % (v4 test, polar ICP); 3.32 cm/s / 0.95 % perturbed | v5 + distillation [22], [23] |
 
 Discarded runs kept for traceability:
 - `streaming_v2/attempt1_free_bias/`: the gyro bias was a free integrator
@@ -553,3 +1569,7 @@ hybrid needs `StreamData.attach_icp` with the matching classical estimates.
 19. J. Sturm, N. Engelhard, F. Endres, W. Burgard, D. Cremers, "A benchmark for the evaluation of RGB-D SLAM systems", IROS 2012.
 20. K. S. Arun, T. S. Huang, S. D. Blostein, "Least-squares fitting of two 3-D point sets", IEEE TPAMI 9(5), 1987.
 21. A. Paszke et al., "PyTorch: An Imperative Style, High-Performance Deep Learning Library", NeurIPS 2019.
+22. G. Hinton, O. Vinyals, J. Dean, "Distilling the Knowledge in a Neural Network", arXiv:1503.02531, 2015.
+23. A. K. Menon, A. S. Rawat, S. J. Reddi, S. Kim, S. Kumar, "A Statistical Perspective on Distillation", ICML 2021.
+24. G. Cybenko, "Approximation by superpositions of a sigmoidal function", Mathematics of Control, Signals and Systems 2(4), 1989; K. Hornik, "Approximation capabilities of multilayer feedforward networks", Neural Networks 4(2), 1991.
+25. F. Bonassi, M. Farina, R. Scattolini, "On the stability properties of Gated Recurrent Units neural networks", Systems & Control Letters 157, 2021.

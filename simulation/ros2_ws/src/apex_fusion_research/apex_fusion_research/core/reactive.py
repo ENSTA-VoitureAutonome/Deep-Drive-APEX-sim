@@ -20,7 +20,7 @@ forward, y left. Paths are those of the rear axle (bicycle model).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import math
 
 import numpy as np
@@ -123,6 +123,88 @@ def _beside_or_ahead(points: np.ndarray, cfg: ReactiveConfig) -> tuple[float, in
     return float(d[k]), (LEFT if y > 0 else RIGHT)
 
 
+def lane_walls(clusters: list[Cluster], cfg: ReactiveConfig) -> list[Wall]:
+    """The walls that bound the lane, and the pieces that continue them.
+
+    With a sparse scan the part of a wall seen at grazing incidence (the far
+    side of a corner) is a trail of a few returns: short clusters, even single
+    points, each within ``lane_join_m`` of the wall or of the previous piece.
+    Every piece is kept apart (its own tangents; a pillar next to a wall must
+    not hide the wall behind it)."""
+    walls = [c.points for c in clusters if c.is_wall]
+    if not walls:
+        return []
+    rest = [c.points for c in clusters if not c.is_wall]
+    pieces = list(walls)
+    grown = True
+    while grown and rest:  # grow chains from the walls
+        grown = False
+        tree = cKDTree(np.concatenate(pieces))
+        keep = []
+        for pts in rest:
+            if float(np.min(tree.query(pts)[0])) <= cfg.lane_join_m:
+                pieces.append(pts)
+                grown = True
+            else:
+                keep.append(pts)
+        rest = keep
+    return [Wall(p, point_tangents(p) if len(p) >= 3 else _chain_tangent(p, pieces), 0, math.nan, _extent(p)) for p in pieces]
+
+
+def _chain_tangent(pts: np.ndarray, pieces: list[np.ndarray]) -> np.ndarray:
+    """Tangent of a piece of one or two returns: towards the nearest point of the other pieces."""
+    others = np.concatenate([q for q in pieces if q is not pts])
+    c = pts.mean(axis=0)
+    q = others[cKDTree(others).query(c)[1]]
+    t = c - q
+    t = t / max(float(np.hypot(t[0], t[1])), 1e-9)
+    return np.tile(t, (len(pts), 1))
+
+
+def lane_known(xy: np.ndarray, lane: list[Wall], d_max: float, both_max: float) -> np.ndarray:
+    """Whether each point (..., 2) is proven to be in the lane by the lane rule.
+
+    A wall bounds the lane only across it: a point is in the lane when a wall
+    lies beside it (the nearest wall point is its perpendicular foot) at most
+    ``d_max`` away, or when it lies between two walls (feet on opposite sides)
+    at most ``both_max`` apart. Beyond the ends of the walls nothing is known."""
+    flat = xy.reshape(-1, 2)
+    known = np.zeros(len(flat), dtype=bool)
+    feet = []
+    for w in lane:
+        d, iq = cKDTree(w.points).query(flat)
+        rel = flat - w.points[iq]
+        t = w.tangents[iq]
+        dd = np.maximum(d, 1e-6)
+        beside = np.abs(rel[:, 0] * t[:, 0] + rel[:, 1] * t[:, 1]) / dd < 0.5
+        known |= beside & (d <= d_max)
+        feet.append((beside, d, rel / dd[:, None]))
+    for a in range(len(feet)):
+        for b in range(a + 1, len(feet)):
+            ba, da, ua = feet[a]
+            bb, db, ub = feet[b]
+            known |= ba & bb & (np.sum(ua * ub, axis=1) < -0.5) & (da + db <= both_max)
+    return known.reshape(xy.shape[:-1])
+
+
+def known_length(known: np.ndarray, s: np.ndarray, horizon: float, s_skip: float = 0.3) -> np.ndarray:
+    """Length of the proven prefix of each path (``known`` (..., S) at arc lengths ``s`` (..., S) or (S,)).
+
+    The first ``s_skip`` metres are where the car already is: they do not count."""
+    s = np.broadcast_to(s, known.shape)
+    unknown = ~known & (s > s_skip)
+    first = np.argmax(unknown, axis=-1)
+    at = np.take_along_axis(s, first[..., None], axis=-1)[..., 0]
+    return np.where(unknown.any(axis=-1), np.maximum(at - 0.1, 0.0), horizon)
+
+
+def lane_speed(l_known: float, horizon: float, cfg: ReactiveConfig) -> float:
+    """Top speed that stops before the end of the proven lane (inf when the whole horizon is proven)."""
+    if l_known >= horizon - 1e-6 or cfg.lane_decel_mps2 <= 0.0:
+        return math.inf
+    return math.sqrt(2.0 * cfg.lane_decel_mps2 * max(0.0, l_known - cfg.lane_margin_m))
+
+
 # --------------------------------------------------------------- wall tracker
 @dataclass
 class TrackerState:
@@ -134,6 +216,7 @@ class TrackerState:
     switched: bool = False
     left_wall: bool = False  # a wall beside the car on each side (log for the planner)
     right_wall: bool = False
+    lane: list[Wall] = field(default_factory=list)  # every visible wall, the evidence of the proven lane (lane_known)
 
 
 class WallTracker:
@@ -249,13 +332,14 @@ class WallTracker:
         if ref_wall is not None:
             sides.add(ref_wall.side)
         lw, rw = LEFT in sides, RIGHT in sides
+        lane = lane_walls(clusters, cfg)
         if ref_wall is None:
-            return TrackerState("NONE", None, None, 0.0, d_hi, switched, lw, rw)
+            return TrackerState("NONE", None, None, 0.0, d_hi, switched, lw, rw, lane)
         if other is not None:
             d_t = min(max(0.5 * (ref_wall.distance + other.distance), self.d_lo), d_hi)
-            return TrackerState("BOTH", ref_wall, other, d_t, d_hi, switched, lw, rw)
+            return TrackerState("BOTH", ref_wall, other, d_t, d_hi, switched, lw, rw, lane)
         d_t = min(max(cfg.d_follow_m, self.d_lo), self.d_hi)
-        return TrackerState("L" if ref_wall.side == LEFT else "R", ref_wall, None, d_t, d_hi, switched, lw, rw)
+        return TrackerState("L" if ref_wall.side == LEFT else "R", ref_wall, None, d_t, d_hi, switched, lw, rw, lane)
 
     def blind_travel(self, travel: float) -> float:
         return 0.0 if self.none_from is None else travel - self.none_from
@@ -363,6 +447,10 @@ class ReactivePlanner:
         diag: dict = {"mode": state.mode, "d_target": state.d_target, "d_hi": state.d_hi, "clr_now": clr_now}
         bound_relaxed = False
         base_pts = np.stack((bx, by), axis=-1)
+        l_known = np.full(x.shape[:2], horizon)
+        if state.lane:
+            l_known = known_length(lane_known(base_pts, state.lane, state.d_hi, cfg.both_max_width_m), s, horizon)
+            cost += cfg.w_lane * (1.0 - l_known / horizon)
         if state.ref is not None:
             wall = state.ref
             tree = cKDTree(wall.points)
@@ -418,14 +506,17 @@ class ReactivePlanner:
         v_curv = math.sqrt(cfg.a_lat_mps2 / max(abs(k1), abs(k2), 1e-3))
         v_free = math.sqrt(max(0.0, 2.0 * cfg.a_dec_mps2 * (f - 0.3)))
         v_clr = v_top * min(1.0, max(0.35, (clr_min - cfg.c_hard_m) / max(cfg.c_soft_m - cfg.c_hard_m, 1e-6)))
-        v_cmd = min(v_top, v_curv, v_free, v_clr)
+        l_k = float(l_known[i, j])
+        v_lane = lane_speed(l_k, horizon, cfg) if guide is None else math.inf  # a guide (race line) comes from the map
+        v_cmd = min(v_top, v_curv, v_free, v_clr, v_lane)
         if state.ref is None and blind_travel >= cfg.blind_hold_m:
             v_cmd = 0.0  # no wall for too long: outside the lane rule, stop
         elif ok and v_free >= cfg.v_min_mps:
             v_cmd = max(v_cmd, cfg.v_min_mps)
         if not ok:
             v_cmd = 0.0
-        diag.update(k1=k1, k2=k2, free=f, clr_min=clr_min, n_feasible=int(feasible.sum()), bound_relaxed=bound_relaxed, cost=float(cost[i, j]) if ok else float("nan"))
+        diag.update(k1=k1, k2=k2, free=f, clr_min=clr_min, n_feasible=int(feasible.sum()), bound_relaxed=bound_relaxed, cost=float(cost[i, j]) if ok else float("nan"),
+                    lane_known=l_k, v_lane=v_lane)
         path = np.column_stack((x[i, j], y[i, j]))
         return ReactiveCommand(k1, v_cmd, path, bool(ok), diag)
 
@@ -526,6 +617,11 @@ class WallPlanner:
         cost += cfg.w_clear * soft.sum(axis=2) / np.maximum(ahead.sum(axis=2), 1)
         cost += 0.3 * (1.0 / lt)  # prefer gentle transitions
         cost += 0.2 * (kmax / veh.kappa_max) ** 2
+        l_known = np.full(dc.shape, horizon)
+        if state.lane:
+            known = lane_known(np.stack((bx, by), axis=-1), state.lane, d_hi, cfg.both_max_width_m) | ~ahead
+            l_known = np.minimum(known_length(known, acc, horizon), horizon)
+            cost += cfg.w_lane * (1.0 - l_known / horizon)
         if self.d_prev is not None:
             cost += cfg.w_smooth * ((dc - self.d_prev) / cfg.off_scale_m) ** 2
         if not feasible.any():
@@ -541,12 +637,15 @@ class WallPlanner:
         v_curv = math.sqrt(cfg.a_lat_mps2 / max(k_near, 1e-3))
         v_free = math.sqrt(max(0.0, 2.0 * cfg.a_dec_mps2 * (f - 0.3)))
         v_clr = v_top * min(1.0, max(0.35, (clr_min - cfg.c_hard_m) / max(cfg.c_soft_m - cfg.c_hard_m, 1e-6)))
-        v_cmd = min(v_top, v_curv, v_free, v_clr)
+        l_k = float(l_known[i, j])
+        v_lane = lane_speed(l_k, horizon, cfg)
+        v_cmd = min(v_top, v_curv, v_free, v_clr, v_lane)
         if v_free >= cfg.v_min_mps:
             v_cmd = max(v_cmd, cfg.v_min_mps)
         diag = {"mode": state.mode, "d_target": state.d_target, "d_hi": d_hi, "d_now": d0, "d_c": float(dc[i, j]), "l_t": float(lt[i, j]),
                 "free": f, "clr_now": clr_now, "clr_min": clr_min, "n_feasible": int(feasible.sum()), "k_near": k_near,
-                "d_wall": wall.distance, "side": wall.side, "planner": "wall", "k1": float(kap[i, j][min(3, len(kap[i, j]) - 1)])}
+                "d_wall": wall.distance, "side": wall.side, "planner": "wall", "k1": float(kap[i, j][min(3, len(kap[i, j]) - 1)]),
+                "lane_known": l_k, "v_lane": v_lane}
         return ReactiveCommand(diag["k1"], v_cmd, path, True, diag)
 
 
@@ -559,6 +658,41 @@ class ReactiveDriver:
         self.planner = ReactivePlanner(veh, cfg)
         self.wall_planner = WallPlanner(veh, cfg)
         self.kappa_prev = 0.0
+        self.base_wall_margin = cfg.wall_margin_m
+        self.base_c_soft = cfg.c_soft_m
+
+    def set_margins(self, wall_add_m: float, soft_add_m: float) -> None:
+        """Widen the margins while the car is unsure of how it steers.
+
+        Clearance is where lap 1 has room to spare, and time is where it does
+        not, so this is the first thing a low confidence should spend and the
+        speed cap the last.
+        """
+        cfg = self.cfg
+        want = (self.base_wall_margin + wall_add_m, self.base_c_soft + soft_add_m)
+        if abs(want[0] - cfg.wall_margin_m) < 1e-4 and abs(want[1] - cfg.c_soft_m) < 1e-4:
+            return
+        cfg = replace(cfg, wall_margin_m=want[0], c_soft_m=want[1])
+        self.cfg = cfg
+        self.tracker.cfg = cfg
+        self.planner.cfg = cfg
+        self.wall_planner.cfg = cfg
+
+    def set_rear_offset(self, rear_offset_m: float) -> None:
+        """Move the reference point of every candidate path.
+
+        The rear axle is where the lateral velocity of the odometry vanishes,
+        which the car measures rather than assumes (see ``plant_id``). The
+        candidate paths, the wall distances and the footprint checks are all
+        built around that point, so all four holders of the vehicle see it.
+        """
+        if abs(rear_offset_m - self.veh.rear_offset_m) < 1e-3:
+            return
+        veh = replace(self.veh, rear_offset_m=float(rear_offset_m))
+        self.veh = veh
+        self.tracker.veh = veh
+        self.planner.veh = veh
+        self.wall_planner.veh = veh
 
     def step(self, cloud_base: np.ndarray, pose_odom: tuple[float, float, float], travel: float, v_now: float,
              guide: np.ndarray | None = None, v_cap: float | None = None) -> tuple[ReactiveCommand, TrackerState]:

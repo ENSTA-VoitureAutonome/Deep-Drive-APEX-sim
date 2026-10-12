@@ -81,7 +81,7 @@ def sweep_interp(values: Tensor, duration: Tensor, tau: Tensor) -> Tensor:
     return v0 + (v1 - v0) * w
 
 
-def build_extras(db_path: Path, data: dict[str, Any]) -> dict[str, Any]:
+def build_extras(db_path: Path, data: dict[str, Any], perturb: Any = None) -> dict[str, Any]:
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     runs = data["runs"]
     n_total = int(data["target"].shape[0])
@@ -99,6 +99,9 @@ def build_extras(db_path: Path, data: dict[str, Any]) -> dict[str, Any]:
             "FROM lidar_scans s JOIN ground_truth g ON g.ground_truth_id = s.ground_truth_id WHERE s.run_id = ? ORDER BY s.seq",
             (r["run_id"],),
         ).fetchall()
+        pert = perturb.run(r["run_id"]) if perturb is not None else None
+        if pert is not None:  # the same kept scans as sqlite_windows.build_split
+            rows = [row for row, k in zip(rows, pert.scan_keep(len(rows))) if k]
         if len(rows) != n:
             raise RuntimeError(f"run {r['run_key']}: {len(rows)} scans, cache has {n}")
         v_body[o : o + n] = np.array([(a, b) for a, b, *_ in rows], dtype=np.float32)
@@ -126,6 +129,13 @@ def build_extras(db_path: Path, data: dict[str, Any]) -> dict[str, Any]:
             ).fetchall(),
             dtype=np.float64,
         )
+        if pert is not None:  # the same IMU stream as sqlite_windows.build_split (bias added to the labels too)
+            if len(b) != r.get("imu_n", len(b)):
+                raise RuntimeError(f"run {r['run_key']}: {len(b)} IMU rows with a bias label, {r['imu_n']} samples")
+            gz = np.zeros((len(b), 6))
+            gz[:, 2] = b[:, 4]
+            t_p, meas, labels = pert.apply_imu(b[:, 0].astype(np.int64), gz, b[:, 1:4])
+            b = np.column_stack((t_p.astype(np.float64), labels, meas[:, 2]))
         imu_t = b[:, 0].astype(np.int64) - int(round(r.get("imu_delay_s", 0.0) * 1e9))  # same stamps as sqlite_windows
         csum = np.vstack((np.zeros((1, 3)), np.cumsum(b[:, 1:4], axis=0)))
         ts = t_ns[o : o + n]
@@ -149,16 +159,18 @@ def build_extras(db_path: Path, data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def load_split(db_path: Path, cache_dir: Path, split: str, imu_delay_comp: bool = False) -> dict[str, Any]:
+def load_split(db_path: Path, cache_dir: Path, split: str, imu_delay_comp: bool = False, perturb: Any = None) -> dict[str, Any]:
     """A split with its stream extras; ``imu_delay_comp``: IMU stamps moved
-    back by the chip filter delay (``sqlite_windows.imu_group_delay_s``)."""
-    data = load_or_build(db_path, cache_dir, split, imu_delay_comp)
+    back by the chip filter delay (``sqlite_windows.imu_group_delay_s``);
+    ``perturb``: optional ``robustness.Perturber`` applied to every run."""
+    data = load_or_build(db_path, cache_dir, split, imu_delay_comp, perturb)
     stat = db_path.stat()
-    path = cache_dir / f"{split}_streams_v4_{int(stat.st_mtime)}_{stat.st_size}{'_imudelay' if imu_delay_comp else ''}.pt"
+    tag = perturb.tag if perturb is not None else ""
+    path = cache_dir / f"{split}_streams_v4_{int(stat.st_mtime)}_{stat.st_size}{'_imudelay' if imu_delay_comp else ''}{tag}.pt"
     if path.exists():
         extras = torch.load(path, map_location="cpu", weights_only=False)
     else:
-        extras = build_extras(db_path, data)
+        extras = build_extras(db_path, data, perturb)
         torch.save(extras, path)
     return {**data, **extras}
 

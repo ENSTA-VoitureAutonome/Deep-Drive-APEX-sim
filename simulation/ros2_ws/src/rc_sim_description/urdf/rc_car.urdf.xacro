@@ -43,6 +43,13 @@
   <xacro:arg name="lidar_rpy" default="0 0 0"/>
   <xacro:arg name="imu_xyz" default=""/>
   <xacro:arg name="imu_rpy" default="0 0 0"/>
+
+  <!-- Geometry of the axles. The defaults are the nominal car; a real2sim run
+       draws them (pose_dataset.vehicle.draw_plant_mismatch) because the real
+       car's wheelbase and the position of its axles are not measured, and the
+       controller has to identify what it is driving. -->
+  <xacro:arg name="wheelbase_m" default="0.30"/>
+  <xacro:arg name="rear_axle_offset_x" default="-0.15"/>
   <!-- Basic dimensions -->
   <xacro:property name="chassis_length" value="0.46"/>
   <xacro:property name="chassis_width" value="0.28"/>
@@ -50,15 +57,19 @@
   <xacro:property name="chassis_clearance" value="0.03"/>
   <xacro:property name="wheel_radius" value="0.06"/>
   <xacro:property name="wheel_thickness" value="0.03"/>
-  <xacro:property name="wheelbase_m" value="0.30"/>
-  <xacro:property name="rear_axle_offset_x" value="-0.15"/>
+  <xacro:property name="wheelbase_m" value="$(arg wheelbase_m)"/>
+  <xacro:property name="rear_axle_offset_x" value="$(arg rear_axle_offset_x)"/>
   <xacro:property name="front_axle_offset_x" value="${rear_axle_offset_x + wheelbase_m}"/>
   <xacro:property name="steering_limit_rad" value="0.3141592654"/>
   <xacro:property name="lidar_offset_x" value="0.18"/>
   <xacro:property name="lidar_offset_z" value="0.12"/>
 
   <!-- Placement helpers -->
-  <xacro:property name="wheel_base_x" value="${front_axle_offset_x}"/>
+  <!-- Each axle sits at its own offset. They used to share
+       front_axle_offset_x, which places both axles symmetrically about
+       base_link: with the nominal -0.15 / 0.30 the two agree and nothing shows,
+       but a car whose axles are not symmetric about its origin then had a
+       wheelbase of 2 * front_axle_offset_x instead of wheelbase_m. -->
   <xacro:property name="wheel_track_y" value="${chassis_width / 2.0 + wheel_thickness / 2.0 - 0.01}"/>
   <xacro:property name="axle_height" value="${wheel_radius}"/>
 
@@ -460,10 +471,10 @@
     </gazebo>
   </xacro:if>
 
-  <xacro:steered_wheel name="front_left_wheel" parent="base_link" xyz="${wheel_base_x} ${wheel_track_y} ${axle_height}"/>
-  <xacro:steered_wheel name="front_right_wheel" parent="base_link" xyz="${wheel_base_x} ${-wheel_track_y} ${axle_height}"/>
-  <xacro:wheel name="rear_left_wheel" parent="base_link" xyz="${-wheel_base_x} ${wheel_track_y} ${axle_height}"/>
-  <xacro:wheel name="rear_right_wheel" parent="base_link" xyz="${-wheel_base_x} ${-wheel_track_y} ${axle_height}"/>
+  <xacro:steered_wheel name="front_left_wheel" parent="base_link" xyz="${front_axle_offset_x} ${wheel_track_y} ${axle_height}"/>
+  <xacro:steered_wheel name="front_right_wheel" parent="base_link" xyz="${front_axle_offset_x} ${-wheel_track_y} ${axle_height}"/>
+  <xacro:wheel name="rear_left_wheel" parent="base_link" xyz="${rear_axle_offset_x} ${wheel_track_y} ${axle_height}"/>
+  <xacro:wheel name="rear_right_wheel" parent="base_link" xyz="${rear_axle_offset_x} ${-wheel_track_y} ${axle_height}"/>
 
   <gazebo reference="base_link">
     <material>Gazebo/Grey</material>

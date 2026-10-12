@@ -122,13 +122,23 @@ class RealSensorNode(Node):
         dp("status_topic", "/apex/sim/real_sensors/status")
         dp("publish_period_s", 0.002)
         dp("truth_csv_dir", "")  # evaluation: truth track (100 Hz), truth at every scan, and the published IMU samples and scans
+        # Stress tests: override the per-power-up draws (NaN = keep the draw of the profile and seed).
+        dp("imu_offset_ms", float("nan"))  # IMU stamp offset [ms]
+        dp("lidar_offset_ms", float("nan"))  # LiDAR stamp offset [ms]
+        dp("gyro_bias_z_extra", 0.0)  # constant added to the published gyro z [rad/s], on top of the drawn bias
         gp = lambda n: self.get_parameter(n).value  # noqa: E731
 
         self.profile = load_profile(str(gp("sensor_profile")), Path(gp("sensors_yaml")))
         vib = yaml.safe_load(Path(gp("vehicle_yaml")).read_text(encoding="utf-8"))["body_dynamics"]["vibration"]
         seed = int(gp("seed"))
-        self.chip = ImuChip(chip_config_from_profile(self.profile["imu"], vib, seed * 7919 + 1))
+        chip_cfg = chip_config_from_profile(self.profile["imu"], vib, seed * 7919 + 1)
+        if math.isfinite(float(gp("imu_offset_ms"))):
+            chip_cfg.timestamp_offset_ms = float(gp("imu_offset_ms"))
+        self.chip = ImuChip(chip_cfg)
+        self.gyro_z_extra = float(gp("gyro_bias_z_extra"))
         cfg = rolling_config_from_profile(self.profile["lidar"], seed * 7919 + 2)
+        if math.isfinite(float(gp("lidar_offset_ms"))):
+            cfg.timestamp_offset_ms = float(gp("lidar_offset_ms"))
         cfg.start_grid_s = 0.001
         self.lidar = RollingLidar(cfg)
         urdf = str(gp("robot_description"))
@@ -295,12 +305,14 @@ class RealSensorNode(Node):
         msg.header.stamp = self._time(s.stamp_ns)
         msg.header.frame_id = self.imu_frame
         msg.orientation_covariance[0] = -1.0  # a raw 6-axis IMU has no orientation
-        msg.angular_velocity.x, msg.angular_velocity.y, msg.angular_velocity.z = (float(v) for v in s.gyro)
+        gyro = np.array(s.gyro, dtype=float)
+        gyro[2] += self.gyro_z_extra
+        msg.angular_velocity.x, msg.angular_velocity.y, msg.angular_velocity.z = (float(v) for v in gyro)
         msg.linear_acceleration.x, msg.linear_acceleration.y, msg.linear_acceleration.z = (float(v) for v in s.accel)
         self.imu_pub.publish(msg)
         self.counts["imu_out"] += 1
         if "imu_raw" in self._csv:
-            self._csv["imu_raw"][1].writerow([s.stamp_ns // 1_000_000_000, s.stamp_ns % 1_000_000_000, *[f"{v:.6f}" for v in s.accel], *[f"{v:.6f}" for v in s.gyro]])
+            self._csv["imu_raw"][1].writerow([s.stamp_ns // 1_000_000_000, s.stamp_ns % 1_000_000_000, *[f"{v:.6f}" for v in s.accel], *[f"{v:.6f}" for v in gyro]])
 
     def _publish_scan(self, rev) -> None:  # noqa: ANN001
         cfg = self.lidar.cfg
@@ -361,6 +373,8 @@ class RealSensorNode(Node):
         self.status_pub.publish(json_msg({
             **self.counts, "pending_out": len(self._out), "revolutions": self.lidar.revolutions,
             "imu_period_s": self.chip.period_s, "imu_dropped": self.chip.samples_dropped,
+            "imu_realization": self.chip.realization(), "gyro_bias_z_extra": self.gyro_z_extra,
+            "lidar_timestamp_offset_ms": self.lidar.cfg.timestamp_offset_ms,
             "lidar_noise_realization": self.lidar.noise.realization(),
         }))
 

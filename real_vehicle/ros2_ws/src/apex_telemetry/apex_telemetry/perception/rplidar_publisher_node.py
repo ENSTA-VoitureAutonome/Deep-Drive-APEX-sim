@@ -1,5 +1,17 @@
 #!/usr/bin/env python3
-"""ROS2 node: read RPLidar on Raspberry and publish LaserScan."""
+"""ROS2 node: read RPLidar on Raspberry and publish LaserScan.
+
+Backends (``source_backend``):
+* ``rplidar_express`` (default): the A2M8 in the Express scan (4 kHz) at a
+  regulated 10 Hz, one scan per complete revolution, stamped at the first
+  sample of the revolution from the LiDAR's own sample clock
+  (``rplidar_express.py``). Besides the three APEX streams it publishes
+  ``scan_raw_topic`` in the layout of the simulation (``APEX_real``), which
+  is what the learned odometry consumes.
+* ``rplidar``: the previous driver (python ``rplidar`` library, 2 kHz legacy
+  scan, stamped on reception, ~13 Hz). Kept to compare.
+* ``sim_scan``: re-publish a simulated scan.
+"""
 
 from __future__ import annotations
 
@@ -15,9 +27,22 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import QoSProfile, ReliabilityPolicy
+from rclpy.time import Time as RosTime
 from sensor_msgs.msg import LaserScan
 
 from .lidar_scan_buffer import LidarScanBuffer
+from .rplidar_express import (
+    ExpressScanPipeline,
+    HEALTH_STATUS,
+    MotorRegulator,
+    RPLidarExpressDriver,
+    StampedRevolution,
+    SupplyGuard,
+    bin_revolution,
+    find_undervoltage_alarm,
+    legacy_measurements,
+)
 
 
 def _try_import_rplidar():
@@ -50,7 +75,7 @@ class RPLidarPublisherNode(Node):
     def __init__(self) -> None:
         super().__init__("apex_rplidar_publisher")
 
-        self.declare_parameter("source_backend", "rplidar")
+        self.declare_parameter("source_backend", "rplidar_express")
         self.declare_parameter("port", "/dev/ttyUSB0")
         self.declare_parameter("baudrate", 115200)
         self.declare_parameter("topic", "/lidar/scan")
@@ -66,6 +91,33 @@ class RPLidarPublisherNode(Node):
         self.declare_parameter("fill_missing_bins", False)
         self.declare_parameter("range_min", 0.05)
         self.declare_parameter("range_max", 12.0)
+        # --- rplidar_express backend (real_vehicle/docs/sensor_timing_requirements.md)
+        # Scan in the simulation's layout for the learned odometry: 360 bins
+        # from -180 deg counter-clockwise, nearest return per bin, REP-117.
+        self.declare_parameter("scan_raw_topic", "/lidar/scan_raw")
+        self.declare_parameter("publish_scan_raw", True)
+        self.declare_parameter("raw_range_min_m", 0.15)  # A2M8 datasheet, as APEX_real
+        self.declare_parameter("raw_range_max_m", 12.0)
+        self.declare_parameter("target_rate_hz", 10.0)  # the rate the learned odometry was trained at
+        self.declare_parameter("motor_pwm", 520)  # start value; ~660 gave 13 Hz on this unit
+        self.declare_parameter("regulate_motor", True)
+        # Soft start: the PWM climbs from motor_start_pwm to motor_pwm over motor_ramp_s.
+        self.declare_parameter("motor_start_pwm", 0)
+        self.declare_parameter("motor_ramp_s", 6.0)
+        self.declare_parameter("motor_settle_s", 2.0)
+        # The car's Pi 5 has reset while the motor started: wait for power_clear_s
+        # without under-voltage first (at most power_wait_max_s), and hold the ramp
+        # while the flag is up (at most power_hold_max_s per step).
+        self.declare_parameter("power_guard", True)
+        self.declare_parameter("power_clear_s", 1.0)
+        self.declare_parameter("power_wait_max_s", 20.0)
+        self.declare_parameter("power_hold_max_s", 10.0)
+        # After a failure the driver waits 1, 2, 4 ... up to this before reopening the LiDAR.
+        self.declare_parameter("retry_max_s", 30.0)
+        # Minimum USB latency, subtracted from the stamps (calibrate on the car).
+        self.declare_parameter("stamp_correction_ms", 0.0)
+        self.declare_parameter("drop_incomplete_revolutions", True)
+        self.declare_parameter("timing_log_every_s", 10.0)
         self.declare_parameter("sim_scan_topic", "/apex/sim/scan")
         self.declare_parameter("sim_publish_latency_s", 0.03)
         self.declare_parameter("sim_random_seed", 4242)
@@ -101,6 +153,24 @@ class RPLidarPublisherNode(Node):
         self._range_max = float(self.get_parameter("range_max").value)
         self._heading_offset_deg = int(self.get_parameter("heading_offset_deg").value)
         self._fov_filter_deg = int(self.get_parameter("fov_filter_deg").value)
+        self._scan_raw_topic = str(self.get_parameter("scan_raw_topic").value)
+        self._publish_scan_raw = bool(self.get_parameter("publish_scan_raw").value)
+        self._raw_range_min = float(self.get_parameter("raw_range_min_m").value)
+        self._raw_range_max = float(self.get_parameter("raw_range_max_m").value)
+        self._target_rate_hz = float(self.get_parameter("target_rate_hz").value)
+        self._motor_pwm = int(self.get_parameter("motor_pwm").value)
+        self._regulate_motor = bool(self.get_parameter("regulate_motor").value)
+        self._motor_start_pwm = int(self.get_parameter("motor_start_pwm").value)
+        self._motor_ramp_s = max(0.0, float(self.get_parameter("motor_ramp_s").value))
+        self._motor_settle_s = max(0.0, float(self.get_parameter("motor_settle_s").value))
+        self._retry_max_s = max(1.0, float(self.get_parameter("retry_max_s").value))
+        self._power_guard = bool(self.get_parameter("power_guard").value)
+        self._power_clear_s = max(0.0, float(self.get_parameter("power_clear_s").value))
+        self._power_wait_max_s = max(0.0, float(self.get_parameter("power_wait_max_s").value))
+        self._power_hold_max_s = max(0.0, float(self.get_parameter("power_hold_max_s").value))
+        self._stamp_correction_s = float(self.get_parameter("stamp_correction_ms").value) * 1e-3
+        self._drop_incomplete = bool(self.get_parameter("drop_incomplete_revolutions").value)
+        self._timing_log_every_s = max(1.0, float(self.get_parameter("timing_log_every_s").value))
         self._sim_scan_topic = str(self.get_parameter("sim_scan_topic").value)
         self._sim_publish_latency_s = max(
             0.0, float(self.get_parameter("sim_publish_latency_s").value)
@@ -156,6 +226,12 @@ class RPLidarPublisherNode(Node):
             self._slam_topic,
             qos_profile_sensor_data,
         )
+        # Same QoS as the simulation's scan (the learned odometry subscribes reliable).
+        self._scan_raw_publisher = self.create_publisher(
+            LaserScan,
+            self._scan_raw_topic,
+            QoSProfile(depth=20, reliability=ReliabilityPolicy.RELIABLE),
+        )
         self._stop_event = threading.Event()
         self._worker: threading.Thread | None = None
         self._sim_queue: deque[
@@ -170,7 +246,10 @@ class RPLidarPublisherNode(Node):
             "localization": None,
         }
 
-        if self._source_backend == "rplidar":
+        if self._source_backend == "rplidar_express":
+            self._worker = threading.Thread(target=self._express_loop, daemon=True)
+            self._worker.start()
+        elif self._source_backend == "rplidar":
             if RPLidar is None:
                 raise RuntimeError("rplidar module not found. Install `rplidar-roboticia`.")
             self._worker = threading.Thread(target=self._scan_loop, daemon=True)
@@ -185,7 +264,7 @@ class RPLidarPublisherNode(Node):
             self._sim_flush_timer = self.create_timer(0.005, self._flush_sim_queue)
         else:
             raise ValueError(
-                "Unsupported source_backend=%r (expected 'rplidar' or 'sim_scan')"
+                "Unsupported source_backend=%r (expected 'rplidar_express', 'rplidar' or 'sim_scan')"
                 % self._source_backend
             )
 
@@ -432,12 +511,15 @@ class RPLidarPublisherNode(Node):
         stream_key: str,
         stamp_msg=None,
         angle_min_rad: float = 0.0,
+        scan_time_s: float | None = None,
     ) -> LaserScan:
         now = stamp_msg if stamp_msg is not None else self.get_clock().now().to_msg()
         current_t = time.time()
 
         last_publish_time = self._last_publish_time_by_stream.get(stream_key)
-        if last_publish_time is None:
+        if scan_time_s is not None:
+            scan_time = float(scan_time_s)  # the revolution's own period
+        elif last_publish_time is None:
             scan_time = 0.0
         else:
             scan_time = max(0.0, current_t - last_publish_time)
@@ -559,6 +641,232 @@ class RPLidarPublisherNode(Node):
                 time.sleep(1.0)
             finally:
                 self._disconnect_lidar()
+
+    # --- rplidar_express backend -------------------------------------------
+    def _express_loop(self) -> None:
+        failures = 0
+        while not self._stop_event.is_set() and rclpy.ok():
+            session_start = time.monotonic()
+            driver = RPLidarExpressDriver(
+                self._port,
+                self._baudrate,
+                timeout_s=1.0,
+                now_ns=lambda: self.get_clock().now().nanoseconds,
+            )
+            try:
+                driver.open()
+                info = driver.get_info()
+                self.get_logger().info(
+                    "RPLIDAR model 0x%02X firmware %s hardware %d S/N %s (port=%s baudrate=%d)"
+                    % (info.model, info.firmware, info.hardware, info.serial, self._port, self._baudrate)
+                )
+                if info.supports_sensitivity:
+                    self.get_logger().info(
+                        "Firmware %s >= 1.24: the 8 kHz Sensitivity scan is available too "
+                        "(simulation profile APEX_real_sensitivity). This node runs the Express scan (APEX_real)."
+                        % info.firmware
+                    )
+                status, error_code = driver.get_health()
+                if status == 2:
+                    raise RuntimeError("RPLIDAR health ERROR (code 0x%04X): power-cycle the LiDAR" % error_code)
+                if status != 0:
+                    self.get_logger().warning(
+                        "RPLIDAR health %s (code 0x%04X)" % (HEALTH_STATUS.get(status, status), error_code)
+                    )
+                std_us, express_us = driver.get_sample_rate()
+                pwm_flag = driver.supports_motor_pwm()
+                pwm_supported = pwm_flag is not False
+                if pwm_flag is None:
+                    self.get_logger().info(
+                        "The LiDAR does not answer the motor-control query; regulating the PWM anyway "
+                        "(the timing log shows whether the rate follows it)."
+                    )
+                elif not pwm_flag:
+                    self.get_logger().error(
+                        "The LiDAR adapter reports no PWM motor control: the rotation rate cannot be set "
+                        "and will not be %.1f Hz." % self._target_rate_hz
+                    )
+                regulator = MotorRegulator(
+                    self._target_rate_hz,
+                    self._motor_pwm,
+                    enabled=self._regulate_motor and pwm_supported,
+                )
+                guard = SupplyGuard(
+                    find_undervoltage_alarm() if self._power_guard else None,
+                    clear_s=self._power_clear_s,
+                    wait_max_s=self._power_wait_max_s,
+                    hold_max_s=self._power_hold_max_s,
+                    sleep=self._sleep_with_stop,
+                )
+                if guard.alarm_path is None:
+                    self.get_logger().info("No under-voltage flag to watch: plain soft start")
+                elif not guard.wait_clear():
+                    self.get_logger().warning(
+                        "The Pi stayed in under-voltage for %.0f s; starting the motor anyway "
+                        "(a reset now means the supply cannot carry the LiDAR motor)" % self._power_wait_max_s
+                    )
+                self.get_logger().info(
+                    "Motor soft start: PWM %d -> %d over %.1f s"
+                    % (min(self._motor_start_pwm, regulator.pwm), regulator.pwm, self._motor_ramp_s)
+                )
+                ramp_t0 = time.monotonic()
+                driver.start_motor(
+                    regulator.pwm,
+                    start_pwm=self._motor_start_pwm,
+                    ramp_s=self._motor_ramp_s,
+                    wait=guard.ramp_wait,
+                )
+                if guard.alarm_path is not None:
+                    self.get_logger().info(
+                        "Motor ramp done in %.1f s; under-voltage seen in %d polls"
+                        % (time.monotonic() - ramp_t0, guard.alarms)
+                    )
+                self._sleep_with_stop(self._motor_settle_s)
+                pipeline = ExpressScanPipeline(
+                    express_us * 1e-6,
+                    self._baudrate,
+                    stamp_correction_s=self._stamp_correction_s,
+                    drop_incomplete=self._drop_incomplete,
+                )
+                driver.start_express()
+                self.get_logger().info(
+                    "Express scan started: %d us per sample (standard %d us), target %.1f Hz, motor PWM %d%s"
+                    % (
+                        express_us,
+                        std_us,
+                        self._target_rate_hz,
+                        regulator.pwm,
+                        " (regulated)" if regulator.enabled else " (fixed)",
+                    )
+                )
+                last_data = time.monotonic()
+                self._express_stats_reset()
+                while not self._stop_event.is_set() and rclpy.ok():
+                    data, host_ns = driver.read_chunk()
+                    now = time.monotonic()
+                    if not data:
+                        if now - last_data > 2.0:
+                            raise RuntimeError("no data from the LiDAR for 2 s")
+                        continue
+                    last_data = now
+                    for stamped in pipeline.feed(data, host_ns):
+                        self._publish_express_revolution(stamped)
+                        new_pwm = regulator.update(stamped.period_s)
+                        if new_pwm is not None:
+                            driver.set_pwm(new_pwm)
+                    self._maybe_log_express(pipeline, regulator)
+            except Exception as exc:
+                if time.monotonic() - session_start > 60.0:
+                    failures = 0
+                failures += 1
+                delay = min(self._retry_max_s, 2.0 ** (failures - 1))
+                self.get_logger().error(
+                    "RPLIDAR Express failure (port=%s baudrate=%d): %s; retry %d in %.0f s"
+                    % (self._port, self._baudrate, exc, failures, delay)
+                )
+                driver.close()
+                self._sleep_with_stop(delay)
+            finally:
+                driver.close()
+
+    def _sleep_with_stop(self, duration_s: float) -> None:
+        deadline = time.monotonic() + duration_s
+        while not self._stop_event.is_set() and time.monotonic() < deadline:
+            time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
+
+    def _publish_express_revolution(self, stamped: StampedRevolution) -> None:
+        rev = stamped.revolution
+        stamp_msg = RosTime(nanoseconds=int(stamped.stamp_ns)).to_msg()
+        period = float(stamped.period_s)
+        if self._publish_scan_raw:
+            ranges = bin_revolution(
+                rev.angles_deg,
+                rev.dist_mm,
+                heading_offset_deg=self._heading_offset_deg,
+                range_min_m=self._raw_range_min,
+                range_max_m=self._raw_range_max,
+            )
+            beams = len(ranges)
+            inc = 2.0 * math.pi / beams
+            msg = LaserScan()
+            msg.header.stamp = stamp_msg
+            msg.header.frame_id = self._frame_id
+            msg.angle_min = -math.pi
+            msg.angle_max = -math.pi + inc * (beams - 1)
+            msg.angle_increment = inc
+            # Nominal time per bin; the firing order (clockwise from +89 deg) is
+            # part of the LiDAR calibration, as in the simulation.
+            msg.time_increment = period / beams
+            msg.scan_time = period
+            msg.range_min = self._raw_range_min
+            msg.range_max = self._raw_range_max
+            msg.ranges = ranges.tolist()
+            self._scan_raw_publisher.publish(msg)
+            self._express_stats["valid_bins"] += int(np.isfinite(ranges).sum())
+        scan = legacy_measurements(rev.angles_deg, rev.dist_mm)
+        ranges = self._scan_buffer.update_from_rplidar_scan(scan)
+        self._publisher.publish(
+            self._build_scan_msg(ranges, stream_key="navigation", stamp_msg=stamp_msg, scan_time_s=period)
+        )
+        self._localization_publisher.publish(
+            self._build_scan_msg(
+                self._build_localization_ranges(scan),
+                stream_key="localization",
+                stamp_msg=stamp_msg,
+                scan_time_s=period,
+            )
+        )
+        self._slam_publisher.publish(
+            self._build_scan_msg(
+                self._build_slam_ranges(scan),
+                stream_key="slam",
+                stamp_msg=stamp_msg,
+                angle_min_rad=-math.pi,
+                scan_time_s=period,
+            )
+        )
+        self._express_stats["revs"] += 1
+        self._express_stats["samples"] += rev.n_samples
+        self._express_stats["period_sum"] += period
+
+    def _express_stats_reset(self) -> None:
+        self._express_stats = {"t0": time.monotonic(), "revs": 0, "samples": 0, "period_sum": 0.0, "valid_bins": 0}
+
+    def _maybe_log_express(self, pipeline: ExpressScanPipeline, regulator: MotorRegulator) -> None:
+        st = self._express_stats
+        if time.monotonic() - st["t0"] < self._timing_log_every_s:
+            return
+        revs = max(1, st["revs"])
+        rate = revs / st["period_sum"] if st["period_sum"] > 0.0 else float("nan")
+        c = pipeline.counters
+        clock = pipeline.mapper.stats()
+        self.get_logger().info(
+            "LiDAR timing: %.2f Hz (target %.1f, PWM %d), %.0f samples/rev, %.0f valid bins/rev, "
+            "published %d, dropped incomplete %d irregular %d, checksum errors %d, lost capsules %d, "
+            "restarts %d, sample clock drift %+.0f ppm, reception latency above envelope p50 %.2f ms p95 %.2f ms"
+            % (
+                rate,
+                self._target_rate_hz,
+                regulator.pwm,
+                st["samples"] / revs,
+                st["valid_bins"] / revs,
+                c.published,
+                c.dropped_incomplete,
+                c.dropped_irregular,
+                pipeline.stream.checksum_errors,
+                pipeline.decoder.lost_capsules,
+                c.restarts,
+                clock.drift_ppm,
+                clock.latency_p50_ms,
+                clock.latency_p95_ms,
+            )
+        )
+        if math.isfinite(rate) and abs(rate - self._target_rate_hz) > 0.03 * self._target_rate_hz:
+            self.get_logger().warning(
+                "LiDAR at %.2f Hz, more than 3 %% off the %.1f Hz the odometry was trained for"
+                % (rate, self._target_rate_hz)
+            )
+        self._express_stats_reset()
 
     def shutdown(self) -> None:
         self._stop_event.set()

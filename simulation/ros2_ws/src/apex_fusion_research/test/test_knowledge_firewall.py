@@ -15,9 +15,16 @@ CAR_SIDE = [
     PKG / "core" / "lap_closure.py",
     PKG / "core" / "pose_correction.py",
     PKG / "core" / "race_planner.py",
+    PKG / "core" / "plant_id.py",
+    PKG / "core" / "adaptive.py",
 ]
+# The plant a simulated run draws (its real wheelbase, the position of its
+# axles, the gain and centre of its servo, the command its motor starts at, the
+# charge of its battery) is written into run_config.json for the evaluation.
+# The car identifies all of that from its own odometry, so reading any of it
+# would make the identification meaningless.
 FORBIDDEN = ("run_setup", "load_track", "speed_calibration", "/apex/sim/", "ground_truth", "truth", "race_eval", "clearance import",
-             "_pose_tools", "gz_runner", "tracks_index")
+             "_pose_tools", "gz_runner", "tracks_index", "plant_true", "draw_plant_mismatch", "perturb")
 
 
 def _code_without_docstrings(path: Path) -> str:

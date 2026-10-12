@@ -26,6 +26,7 @@ from icp_odometry import ICP_VARIANTS, run_icp  # noqa: E402
 from live_odometry import MAX_IMU, LidarCalibration, LiveOdometry  # noqa: E402
 from sqlite_streams import StreamData, load_split  # noqa: E402
 from sqlite_windows import imu_group_delay_s  # noqa: E402
+from standstill import StandstillConfig  # noqa: E402
 from streaming_model import load_checkpoint  # noqa: E402
 from train_streaming import CACHE, OUT, stream_predict  # noqa: E402
 from pose_dataset.blobs import decode_mask, decode_ranges  # noqa: E402
@@ -109,7 +110,12 @@ def test_live_replay_matches_batch(dbs: tuple[Path, ...], run_key: str, ckpts: t
     prof["extrinsic"] = {"xyz": json.loads(ext)}
     cal = LidarCalibration.from_profile(prof)
     delay = imu_group_delay_s(imu_cfg)
-    live = LiveOdometry(ckpt, cal, device="cpu", imu_wait_s=10.0, imu_group_delay_s=delay)
+    # No standstill hold: this test measures the *network* path against the
+    # batch evaluation, and the hold deliberately bypasses the network on
+    # parked revolutions (standstill.py). With it on, a run whose prefix is
+    # stationary would be comparing two different estimators.
+    live = LiveOdometry(ckpt, cal, device="cpu", imu_wait_s=10.0, imu_group_delay_s=delay,
+                        standstill=StandstillConfig(enable=False))
     lag = int(round(delay * 1e9)) if fast else 0  # a sample covers the revolution once its compensated stamp does
 
     stamps = [s[0] for s in scans]
